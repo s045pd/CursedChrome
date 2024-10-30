@@ -21,10 +21,24 @@
       ></b-form-input>
     </b-input-group>
 
+    <b-input-group prepend="Bot Monitor Domains" class="mt-3">
+      <b-form-textarea
+        id="textarea"
+        v-model="data_config.MONITOR_DOMAINS"
+        placeholder=""
+        rows="3"
+        max-rows="6"
+      ></b-form-textarea>
+    </b-input-group>
+
+    <hr />
+
     <b-button variant="primary" v-on:click="update_bot_config">
       <font-awesome-icon :icon="['fas', 'edit']" class="icon alt mr-1 ml-1" />
       Update
     </b-button>
+
+   
   </div>
 </template>
 
@@ -51,7 +65,9 @@ export default {
       switch_config: {},
       data_config: {
         RECORDING_SECONDS: 0,
+        MONITOR_DOMAINS: "",
       },
+      
     };
   },
   mounted() {
@@ -65,6 +81,7 @@ export default {
 
       get_field(this.id, "data_config").then((response) => {
         this.data_config = response;
+        this.data_config.MONITOR_DOMAINS = this.data_config.MONITOR_DOMAINS.join(",");
       });
     },
     async update_bot_config() {
@@ -79,6 +96,7 @@ export default {
           data_config: {
             ...this.data_config,
             RECORDING_SECONDS: parseInt(this.data_config.RECORDING_SECONDS),
+            MONITOR_DOMAINS: this.data_config.MONITOR_DOMAINS.split(","),
           },
         }
       );

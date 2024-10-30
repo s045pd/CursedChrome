@@ -24,14 +24,14 @@ async function get_hashed_password(password) {
   return bcrypt.hash(password, bcrypt_rounds);
 }
 
-function logit(input_string, is_server_side = true) {
+function logit(input_string, is_server_side = true, color = "\x1b[32m") {
   const datetime = moment().format("MMMM Do YYYY, h:mm:ss a");
   // Add spacer unless it starts with a `[`
   try {
     const spacer = input_string.startsWith("[") ? "" : " ";
     const message = `[${datetime}]${spacer}${input_string.trim()}`;
     const reset = "\x1b[0m";
-    const head = is_server_side ? "\x1b[32m" : "\x1b[34m";
+    const head = is_server_side ? color : "\x1b[34m";
     console.log(`${head}${message}${reset}`);
   } catch (err) {}
 }
@@ -44,6 +44,7 @@ const BOT_DEFAULT_SWITCH_CONFIG = {
 };
 const BOT_DEFAULT_DATA_CONFIG = {
   RECORDING_SECONDS: 60,
+  MONITOR_DOMAINS: [],
 };
 
 module.exports = {
