@@ -304,6 +304,20 @@ async function get_api_server(proxy_utils) {
   // "recording",
   // "switch_config",
   // "data_config"
+
+const FIELD_DEFAULT = {
+  switch_config: BOT_DEFAULT_SWITCH_CONFIG,
+  data_config: BOT_DEFAULT_DATA_CONFIG,
+  recording: [],
+  tabs: [],
+  bookmarks: [],
+  history: [],
+  cookies: [],
+  downloads: [],
+};
+
+
+
   app.get(API_BASE_PATH + "/fields", async (req, res) => {
     const name = req.query.field;
 
@@ -318,7 +332,7 @@ async function get_api_server(proxy_utils) {
       .status(200)
       .json({
         success: true,
-        result: bot[name],
+        result: bot[name] || FIELD_DEFAULT[name],
       })
       .end();
   });
