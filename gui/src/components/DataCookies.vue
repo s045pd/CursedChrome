@@ -49,7 +49,7 @@
       responsive
       stacked
       v-model="cookies_page"
-      :total-rows="info"
+      :total-rows="info.length"
       :per-page="cookies_page_size"
       aria-controls="cookies_table"
     ></b-pagination>

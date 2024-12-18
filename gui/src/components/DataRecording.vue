@@ -30,7 +30,7 @@
       responsive
       stacked
       v-model="recording_page"
-      :total-rows="info"
+      :total-rows="info.length"
       :per-page="recording_page_size"
       aria-controls="recording_table"
     ></b-pagination>
