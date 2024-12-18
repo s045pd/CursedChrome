@@ -127,7 +127,7 @@ export default {
     },
     async get_mp3() {
       await api_file_request("POST", "/mp3", {
-        bot_id: this.data.id,
+        bot_id: this.info.id,
       });
     },
   },

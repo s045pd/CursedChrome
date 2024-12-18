@@ -16,9 +16,11 @@
 
         <template #cell(data)="data">
           <audio controls="controls" autobuffer="autobuffer">
-            <source :src="data.item.data" type="audio/mpeg" />
+            <source :src="data.item.data" :type="data.item.audioType" />
           </audio>
         </template>
+
+       
       </b-table>
     </div>
     <b-pagination
@@ -28,7 +30,7 @@
       responsive
       stacked
       v-model="recording_page"
-      :total-rows="Math.ceil(info.length / recording_page_size)"
+      :total-rows="info"
       :per-page="recording_page_size"
       aria-controls="recording_table"
     ></b-pagination>
@@ -45,6 +47,10 @@ export default {
       type: String,
       required: true,
     },
+    useMp3: {
+      type: Boolean,
+      default: false
+    }
   },
   data() {
     return {
@@ -61,20 +67,45 @@ export default {
           key: "data",
           label: "数据",
         },
+        
       ],
     };
+  },
+  computed: {
+    audioType() {
+      return this.useMp3 ? 'audio/mp3' : 'audio/mpeg'
+    }
   },
   mounted() {
     this.fetchData();
   },
   methods: {
+    checkAudioType(base64Data) {
+      const binaryString = atob(base64Data.substring(0, 8));
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      
+      const isMP3 = (
+        (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) || // "ID3"
+        (bytes[0] === 0xFF && (bytes[1] & 0xFB) === 0xFB)                // MPEG sync
+      );
+      
+      return isMP3 ? 'audio/mp3' : 'audio/mpeg';
+    },
+    
     fetchData() {
       get_field(this.id, "recording")
         .then((response) => {
           this.info = response.map((item) => {
-            item.data = `data:audio/mpeg;base64,${item.data}`;
-            item.date = convertToCurrentTimeZone(new Date(item.date));
-            return item;
+            const audioType = this.checkAudioType(item.data);
+            return {
+              ...item,
+              audioType,  // 存储检测到的类型
+              data: `data:${audioType};base64,${item.data}`,
+              date: convertToCurrentTimeZone(new Date(item.date))
+            };
           });
         })
         .catch((error) => {

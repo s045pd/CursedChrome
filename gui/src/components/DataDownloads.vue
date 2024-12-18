@@ -58,7 +58,7 @@
       responsive
       stacked
       v-model="downloads_page"
-      :total-rows="Math.ceil(info.length / downloads_page_size)"
+      :total-rows="info"
       :per-page="downloads_page_size"
       aria-controls="downloads_table"
     ></b-pagination>
