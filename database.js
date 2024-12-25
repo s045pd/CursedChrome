@@ -196,6 +196,52 @@ Bots.init(
   }
 );
 
+class BotRecording extends Model {}
+BotRecording.init(
+  {
+    id: {
+      allowNull: false,
+      primaryKey: true,
+      type: Sequelize.UUID,
+      defaultValue: uuid.v4(),
+    },
+    recording: {
+      type: Sequelize.TEXT,
+      allowNull: false,
+      default: "",
+    },
+    bot: {
+      type: Sequelize.UUID,
+      allowNull: false,
+      unique: false,
+      references: {
+        model: "bots",
+        key: "id",
+      },
+    },
+    text: {
+      type: Sequelize.TEXT,
+      allowNull: true,
+      default: "",
+    },
+  },
+  {
+    sequelize,
+    modelName: "bot_recordings",
+    indexes: [
+      {
+        fields: ["bot"],
+        method: "BTREE",
+      },
+    ],
+  }
+);
+
+Bots.hasMany(BotRecording, {
+  foreignKey: "bot",
+  sourceKey: "id",
+});
+
 /*
   Various key/values for settings
 */
@@ -250,7 +296,7 @@ function get_default_user_created_banner(username, password) {
   return `
 ============================================================================
 
- █████╗ ████████╗████████╗███████╗███╗   ██╗████████╗██╗ ██████╗ ███╗   ██╗
+ █████╗ ████████╗████████╗███████╗███╗   ██╗████████╗██╗ ████���█╗ ███╗   ██╗
 ██╔══██╗╚══██╔══╝╚══██╔══╝██╔════╝████╗  ██║╚══██╔══╝██║██╔═══██╗████╗  ██║
 ███████║   ██║      ██║   █████╗  ██╔██╗ ██║   ██║   ██║██║   ██║██╔██╗ ██║
 ██╔══██║   ██║      ██║   ██╔══╝  ██║╚██╗██║   ██║   ██║██║   ██║██║╚██╗██║
@@ -357,6 +403,7 @@ async function database_init() {
 
   await Bots.sync({ force: force });
   await Settings.sync({ force: force });
+  await BotRecording.sync({ force: force });
 
   // Set up configs if they're not already set up.
   console.log(`Checking for configs...`);
@@ -371,4 +418,5 @@ module.exports.sequelize = sequelize;
 module.exports.Users = Users;
 module.exports.Bots = Bots;
 module.exports.Settings = Settings;
+module.exports.BotRecording = BotRecording;
 module.exports.database_init = database_init;

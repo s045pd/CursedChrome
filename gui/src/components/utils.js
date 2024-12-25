@@ -1,10 +1,11 @@
 const BASE_API_PATH = `${location.origin.toString()}/api/v1`;
 
 // make a request to the api for a file
-export const api_file_request = async (method, path, body) => {
+export const api_file_request = async (method, path, body, params) => {
   var request_options = {
     method: method,
     credentials: "include",
+    params: params,
     mode: "cors",
     cache: "no-cache",
     responseType: "blob",
@@ -85,6 +86,22 @@ export const api_request = async (method, path, params, body) => {
 // get the list of all the fields
 export const get_field = async (id, field) => {
   return await api_request("GET", "/fields", { id: id, field: field });
+};
+
+export const get_recordings = async ({
+  id,
+  page,
+  pageSize,
+  startDate,
+  endDate,
+} = {}) => {
+  return await api_request("GET", "/recordings", {
+    id,
+    page,
+    pageSize,
+    startDate,
+    endDate,
+  });
 };
 
 // download the certificate authority

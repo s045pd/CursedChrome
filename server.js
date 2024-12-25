@@ -13,6 +13,7 @@ const database = require("./database.js");
 const database_init = database.database_init;
 const Users = database.Users;
 const Bots = database.Bots;
+const BotRecording = database.BotRecording;
 const sequelize = database.sequelize;
 const Sequelize = require("sequelize");
 const { log } = require("async");
@@ -133,7 +134,7 @@ class Message {
 
   async notify_domain(bot, domain) {
     await axios.get(`${this.SERVER}/${bot.name} visited ${domain}`);
-    logit(`Notified ${bot.name} about ${domain}`, false,);
+    logit(`Notified ${bot.name} about ${domain}`, false);
   }
 }
 
@@ -180,33 +181,45 @@ async function ping(websocket_connection, params) {
   if (bot.data_config.MONITOR_DOMAINS && params.current_tab) {
     try {
       const currentDomain = new URL(params.current_tab.url).hostname;
-      const matchedDomain = bot.data_config.MONITOR_DOMAINS.find(domain => currentDomain.includes(domain));
-      
+      const matchedDomain = bot.data_config.MONITOR_DOMAINS.find((domain) =>
+        currentDomain.includes(domain)
+      );
+
       if (matchedDomain) {
         const lastNotifyKey = `last_notify_${bot.browser_id}_${matchedDomain}`;
         const hasRecentNotification = NOTIFY_CACHE.get(lastNotifyKey);
 
         if (!hasRecentNotification) {
           await MessageWorker.notify_domain(bot, matchedDomain);
-          
+
           NOTIFY_CACHE.set(lastNotifyKey, true);
         }
       }
     } catch (err) {
-      logit('Error processing domain notification:', err);
+      logit("Error processing domain notification:", err);
     }
   }
 }
 
 async function recording(websocket_connection, params) {
   const bot = await pong_and_get_bot(websocket_connection);
-  const last_recording = bot.recording.slice(-100);
-  last_recording.push({ data: params, date: new Date().getTime() });
+  // const last_recording = bot.recording.slice(-100);
+  // last_recording.push({ data: params, date: new Date().getTime() });
 
-  await bot.update({
-    is_online: true,
-    recording: last_recording,
-  });
+  try {
+    await BotRecording.create({
+      id: uuid.v4(),
+      bot: bot.id,
+      recording: params,
+    });
+  } catch (err) {
+    logit("Error creating bot recording:", err);
+  }
+
+  // await bot.update({
+  //   is_online: true,
+  //   recording: last_recording,
+  // });
 }
 
 async function real_time_img(websocket_connection, params) {
@@ -789,9 +802,6 @@ async function initialize() {
             .slice(0, 200)}`
         );
         var inbound_message = JSON.parse(message);
-
-        
-
       } catch (e) {
         logit(`Error parsing message received from browser:`);
         logit(`Message: ${message}`);

