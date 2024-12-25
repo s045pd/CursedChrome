@@ -129,14 +129,26 @@ export default {
           startDate: this.dateRange.startDate,
           endDate: this.dateRange.endDate,
         });
-        this.info = response.recordings.map(item => ({
-          audioType: this.checkAudioType(item.recording),
-          data: `data:${this.checkAudioType(item.recording)};base64,${item.recording}`,
-          date: convertToCurrentTimeZone(new Date(item.createdAt))
-        }));
-        console.log(response,this.info);
+        this.info = response.recordings.map(item => {
+          // Convert base64 to Blob
+          const audioType = this.checkAudioType(item.recording);
+          const binaryString = atob(item.recording);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          const blob = new Blob([bytes], { type: audioType });
+          const blobUrl = URL.createObjectURL(blob);
+
+          return {
+            audioType,
+            data: blobUrl,
+            date: convertToCurrentTimeZone(new Date(item.createdAt))
+          };
+        });
+        console.log(response, this.info);
         this.totalRows = response.pagination.total;
-    } catch (error) {
+      } catch (error) {
         console.error('Error fetching recordings:', error);
       }
     },
