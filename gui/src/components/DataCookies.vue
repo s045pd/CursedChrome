@@ -17,8 +17,7 @@
           >
 
           <b-button
-            v-bind:data-clipboard-text="JSON.stringify(info)"
-            v-on:click="copy_toast"
+            @click="copyToClipboard"
           >
             <font-awesome-icon
               :icon="['fas', 'clipboard']"
@@ -70,6 +69,7 @@ export default {
   data() {
     return {
       info: [],
+      filteredInfo: [],
       // boot cookies
       cookies_search_word: "",
       cookies_filterOn: ["domain", "name", "value"],
@@ -122,6 +122,19 @@ export default {
     this.fetchData();
   },
   methods: {
+    copyToClipboard() {
+      const textToCopy = JSON.stringify(
+        this.cookies_search_word ? this.filteredInfo : this.info
+      );
+      
+      navigator.clipboard.writeText(textToCopy)
+        .then(() => {
+          this.copy_toast();
+        })
+        .catch(err => {
+          console.error('Failed to copy text: ', err);
+        });
+    },
     copy_toast() {
       copy_toast();
     },
@@ -157,8 +170,8 @@ export default {
     },
     on_cookies_filtered(filtered_items) {
       this.cookies_page = 1;
-      this.bot_length_map[this.id_bot_selected]["cookies"] =
-        filtered_items.length;
+      this.filteredInfo = filtered_items;
+      this.bot_length_map[this.id_bot_selected]["cookies"] = filtered_items.length;
     },
   },
 };

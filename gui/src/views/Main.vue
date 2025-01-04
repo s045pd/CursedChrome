@@ -590,6 +590,10 @@ export default {
       response.bots.map((bot) => {
         this.bots_map[bot.id] = bot;
       });
+      // Update selected_bot if there's a bot currently selected
+      if (this.id_bot_selected) {
+        this.selected_bot = copy(this.bots_map?.[this.id_bot_selected] || {});
+      }
     },
     copy_toast() {
       this.$toastr.s("Copied to clipboard successfully.");
