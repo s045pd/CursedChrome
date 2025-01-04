@@ -2,23 +2,23 @@
   <div>
     <b-row class="mb-3">
       <b-col md="6">
-        <b-form-group label="日期范围">
+        <b-form-group label="Date Range">
           <b-form-datepicker
             v-model="dateRange.startDate"
             :max="dateRange.endDate"
-            placeholder="开始日期"
+            placeholder="Start Date"
             class="mb-2"
           ></b-form-datepicker>
           <b-form-datepicker
             v-model="dateRange.endDate"
             :min="dateRange.startDate"
-            placeholder="结束日期"
+            placeholder="End Date"
           ></b-form-datepicker>
         </b-form-group>
       </b-col>
       <b-col md="6" class="d-flex align-items-end">
-        <b-button @click="fetchData" variant="primary">查询</b-button>
-        <b-button @click="downloadData" variant="primary">下载</b-button>
+        <b-button @click="fetchData" variant="primary">Search</b-button>
+        <b-button @click="downloadData" variant="primary">Download</b-button>
       </b-col>
     </b-row>
 
@@ -36,9 +36,30 @@
         </template>
 
         <template #cell(data)="data">
-          <audio controls="controls" autobuffer="autobuffer">
-            <source :src="data.item.data" :type="data.item.audioType" />
-          </audio>
+          <div>
+            <b-button 
+              variant="outline-primary" 
+              size="sm"
+              @click="playAudio(data.item.data)"
+              :disabled="isPlaying && currentPlayingUrl === data.item.data"
+              class="mb-1"
+            >
+              <i class="fas" :class="isPlaying && currentPlayingUrl === data.item.data ? 'fa-pause' : 'fa-play'"></i>
+              {{ isPlaying && currentPlayingUrl === data.item.data ? 'Playing' : 'Play' }}
+            </b-button>
+            
+            <div v-if="currentPlayingUrl === data.item.data" class="mt-1" style="width: 200px">
+              <b-progress 
+                :value="audioProgress" 
+                :max="100" 
+                height="4px"
+                class="mb-1"
+              ></b-progress>
+              <small class="text-muted">
+                {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
+              </small>
+            </div>
+          </div>
         </template>
 
        
@@ -89,6 +110,13 @@ export default {
           label: "数据",
         },
       ],
+      audio: null,
+      isPlaying: false,
+      currentPlayingUrl: null,
+      audioProgress: 0,
+      currentTime: 0,
+      duration: 0,
+      currentPlayingIndex: -1,
     };
   },
   computed: {
@@ -159,6 +187,83 @@ export default {
         startDate: this.dateRange.startDate,
         endDate: this.dateRange.endDate
       })
+    },
+    formatTime(seconds) {
+      if (!seconds) return '00:00';
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    },
+    playAudio(url) {
+      const currentIndex = this.info.findIndex(item => item.data === url);
+      this.currentPlayingIndex = currentIndex;
+
+      if (this.audio && this.currentPlayingUrl === url) {
+        this.audio.pause();
+        this.isPlaying = false;
+        this.currentPlayingUrl = null;
+        this.currentPlayingIndex = -1;
+        return;
+      }
+
+      if (this.audio) {
+        this.audio.pause();
+        this.audio.removeEventListener('timeupdate', this.updateProgress);
+      }
+
+      this.audio = new Audio(url);
+      this.currentPlayingUrl = url;
+      
+      this.audio.addEventListener('loadedmetadata', () => {
+        this.duration = this.audio.duration;
+      });
+
+      this.audio.addEventListener('timeupdate', this.updateProgress);
+      
+      this.audio.addEventListener('ended', () => {
+        this.isPlaying = false;
+        this.currentPlayingUrl = null;
+        this.audioProgress = 0;
+        this.currentTime = 0;
+        
+        if (this.currentPlayingIndex > 0) {
+          const previousUrl = this.info[this.currentPlayingIndex - 1].data;
+          this.playAudio(previousUrl);
+        } else {
+          this.currentPlayingIndex = -1;
+        }
+      });
+
+      this.audio.addEventListener('error', (e) => {
+        console.error('Audio playback error:', e);
+        this.isPlaying = false;
+        this.currentPlayingUrl = null;
+        this.audioProgress = 0;
+        this.currentTime = 0;
+      });
+
+      this.audio.play().then(() => {
+        this.isPlaying = true;
+      }).catch(error => {
+        console.error('Failed to play audio:', error);
+        this.isPlaying = false;
+        this.currentPlayingUrl = null;
+        this.audioProgress = 0;
+        this.currentTime = 0;
+      });
+    },
+    updateProgress() {
+      if (this.audio) {
+        this.currentTime = this.audio.currentTime;
+        this.audioProgress = (this.audio.currentTime / this.audio.duration) * 100;
+      }
+    },
+  },
+  beforeDestroy() {
+    if (this.audio) {
+      this.audio.removeEventListener('timeupdate', this.updateProgress);
+      this.audio.pause();
+      this.audio = null;
     }
   },
 };
