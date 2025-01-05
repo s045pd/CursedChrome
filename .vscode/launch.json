@@ -11,7 +11,7 @@
             "type": "node-terminal"
         },
         {
-            "command": "cd gui && nvm use 12.16.2 && npm run serve",
+            "command": "cd gui && nvm use 18 && npm run serve",
             "name": "ui",
             "request": "launch",
             "type": "node-terminal"
