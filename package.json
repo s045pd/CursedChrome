@@ -34,6 +34,7 @@
     "iconv-lite": "^0.4.6",
     "inquirer": "^5.2.0",
     "ip": "^0.3.2",
+    "javascript-obfuscator": "^4.1.1",
     "juicer": "^0.6.6-stable",
     "mime-types": "2.1.11",
     "moment": "^2.24.0",
@@ -54,7 +55,6 @@
     "whatwg-fetch": "^1.0.0",
     "ws": "^5.1.0"
   },
-  "devDependencies": {},
   "repository": {
     "type": "git",
     "url": "git+https://github.com/s045pd/CursedChrome.git"

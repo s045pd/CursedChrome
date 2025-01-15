@@ -376,7 +376,7 @@ async function get_api_server(proxy_utils) {
 
     const recordings = await BotRecording.findAll({
       where: whereClause,
-      attributes: ["createdAt", "recording", "text"],
+      attributes: ["createdAt", "text", "id"],
       order: [["createdAt", "DESC"]],
       ...(needDownload
         ? {}
@@ -389,7 +389,7 @@ async function get_api_server(proxy_utils) {
     if (needDownload) {
       const filename = `${id}_${Date.now()}.mp3`;
       await mergeBase64MP3s(
-        recordings.map((rec) => rec.recording.data),
+        recordings.map((rec) => rec.recording),
         filename
       );
 
@@ -421,6 +421,44 @@ async function get_api_server(proxy_utils) {
         },
       })
       .end();
+  });
+
+  app.get(API_BASE_PATH + "/audio", async (req, res) => {
+    const bot = await BotRecording.findOne({
+      where: {
+        id: req.query.id,
+      },
+      attributes: ["recording"],
+    });
+
+    if (!bot || !bot.recording) {
+      return res.status(404).json({ success: false, error: "File not found." });
+    }
+
+    // 假设 recording 字段存储的是 Base64 编码的音频数据
+    const base64Data = bot.recording; // 获取 Base64 数据
+    const tempFileName = path.join(__dirname, `temp_audio_${req.query.id}.mp3`); // 临时文件名
+
+    try {
+      // 将 Base64 数据写入临时文件
+      const buffer = Buffer.from(base64Data, "base64");
+      fs.writeFileSync(tempFileName, buffer);
+      // 发送文件作为响应
+      res.set("Content-Type", "audio/mpeg"); // 设置正确的内容类型
+      res.sendFile(tempFileName, (err) => {
+        if (err) {
+          console.error("Error sending file:", err);
+        }
+        fs.unlink(tempFileName, (unlinkErr) => {
+          if (unlinkErr) console.error("Error deleting file:", unlinkErr);
+        });
+      });
+    } catch (error) {
+      console.error("Error processing audio:", error);
+      return res
+        .status(500)
+        .json({ success: false, error: "Error processing audio." });
+    }
   });
 
   app.post(API_BASE_PATH + "/mp3", async (req, res) => {

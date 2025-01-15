@@ -17,12 +17,7 @@
         </b-form-group>
       </b-col>
       <b-col md="6" class="d-flex align-items-end">
-        <div class="mr-3">
-          <b-form-checkbox v-model="useMp3Local">
-            Use MP3 Format
-          </b-form-checkbox>
-        </div>
-        <b-button @click="fetchData" variant="primary" class="mr-2">Search</b-button>
+        <b-button @click="fetchData" variant="primary">Search</b-button>
         <b-button @click="downloadData" variant="primary">Download</b-button>
       </b-col>
     </b-row>
@@ -121,8 +116,7 @@ export default {
       currentTime: 0,
       duration: 0,
       currentPlayingIndex: -1,
-      audioContext: null,
-      useMp3Local: false
+      audioContext: null
     };
   },
   computed: {
@@ -133,16 +127,6 @@ export default {
   watch: {
     recording_page() {
       this.fetchData();
-    },
-    useMp3Local(newVal) {
-      this.$emit('update:useMp3', newVal);
-      this.fetchData();
-    },
-    useMp3: {
-      immediate: true,
-      handler(newVal) {
-        this.useMp3Local = newVal;
-      }
     }
   },
   mounted() {
@@ -207,19 +191,14 @@ export default {
           this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
 
-        // Fetch the audio data - modified for base64
-        const base64Data = url.split(',')[1];
-        const binaryString = atob(base64Data);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
+        // 直接使用 URL，不需要额外处理
+        const response = await fetch(url);
+        const arrayBuffer = await response.arrayBuffer();
         
         // Decode the audio data
-        const audioBuffer = await this.audioContext.decodeAudioData(bytes.buffer);
+        const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
         
-        // Create audio element for playback
-        this.audio = new Audio(url);  // 直接使用 data URL
+        this.audio = new Audio(url);
         this.currentPlayingUrl = url;
         
         // Setup event listeners
@@ -423,22 +402,6 @@ export default {
       }
     },
 
-    // Audio format detection
-    checkAudioType(base64Data) {
-      const binaryString = atob(base64Data.substring(0, 8));
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      
-      const isMP3 = (
-        (bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) || // "ID3" header
-        (bytes[0] === 0xFF && (bytes[1] & 0xFB) === 0xFB)                // MPEG sync frame
-      );
-      
-      return isMP3 ? 'audio/mp3' : 'audio/mpeg';
-    },
-
     // Time formatting helper
     formatTime(seconds) {
       if (!seconds) return '00:00';
@@ -457,10 +420,10 @@ export default {
           endDate: this.dateRange.endDate,
         });
         this.info = response.recordings.map(item => {
-          // 直接使用 base64 数据
-          const audioData = `data:${this.useMp3 ? 'audio/mp3' : 'audio/mpeg'};base64,${item.recording}`;
+          // 使用新的音频 URL
+          const audioUrl = `/api/v1/audio?id=${item.id}`;
           return {
-            data: audioData,
+            data: audioUrl,
             date: convertToCurrentTimeZone(new Date(item.createdAt))
           };
         });
