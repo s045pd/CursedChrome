@@ -162,6 +162,11 @@ export default {
       if (this.audio) {
         this.audio.pause();
         
+        // Revoke object URL if it exists
+        if (this.audio.src.startsWith('blob:')) {
+          URL.revokeObjectURL(this.audio.src);
+        }
+        
         // Remove specific timeupdate handler if it exists
         if (this.audio._timeUpdateHandler) {
           this.audio.removeEventListener('timeupdate', this.audio._timeUpdateHandler);
@@ -191,15 +196,20 @@ export default {
           this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
 
-        // 直接使用 URL，不需要额外处理
+        // 获取音频数据并创建Blob URL
         const response = await fetch(url);
         const arrayBuffer = await response.arrayBuffer();
         
-        // Decode the audio data
-        const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+        // 创建Blob并生成URL
+        const blob = new Blob([arrayBuffer], { type: this.audioType });
+        const audioUrl = URL.createObjectURL(blob);
         
-        this.audio = new Audio(url);
-        this.currentPlayingUrl = url;
+        // 使用Blob URL创建Audio对象
+        this.audio = new Audio(audioUrl);
+        this.currentPlayingUrl = url;  // 保存原始URL用于比较
+        
+        // Decode the audio data for waveform
+        const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer.slice(0));
         
         // Setup event listeners
         this.setupAudioEventListeners();
@@ -214,6 +224,11 @@ export default {
         // Start playback
         await this.audio.play();
         this.isPlaying = true;
+
+        // 添加cleanup函数
+        this.audio.addEventListener('ended', () => {
+          URL.revokeObjectURL(audioUrl);
+        });
       } catch (error) {
         console.error('Failed to initialize audio:', error);
         this.resetPlaybackState();
@@ -346,11 +361,17 @@ export default {
     setupAudioEventListeners() {
       // Duration metadata loaded
       this.audio.addEventListener('loadedmetadata', () => {
-        this.duration = this.audio.duration;
+        this.duration = this.audio.duration || 0;
       });
 
       // Progress update
-      this.audio.addEventListener('timeupdate', this.updateProgress);
+      this.audio.addEventListener('timeupdate', () => {
+        if (this.audio) {
+          this.currentTime = this.audio.currentTime || 0;
+          this.duration = this.audio.duration || 0;  // 确保duration也被更新
+          this.audioProgress = (this.audio.currentTime / this.audio.duration) * 100;
+        }
+      });
       
       // Playback ended
       this.audio.addEventListener('ended', this.handlePlaybackEnded);
@@ -393,6 +414,7 @@ export default {
       this.currentPlayingUrl = null;
       this.audioProgress = 0;
       this.currentTime = 0;
+      this.duration = 0;  // 重置duration
     },
 
     updateProgress() {
