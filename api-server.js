@@ -129,7 +129,7 @@ async function get_api_server(proxy_utils) {
       setHeaders: function (res, path, stat) {
         res.set(
           "Content-Security-Policy",
-          "default-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'none'; connect-src 'self'"
+          "default-src 'none'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'none'; connect-src 'self'; media-src 'self' blob: data:;"
         );
       },
     })
@@ -435,30 +435,17 @@ async function get_api_server(proxy_utils) {
       return res.status(404).json({ success: false, error: "File not found." });
     }
 
-    // 假设 recording 字段存储的是 Base64 编码的音频数据
-    const base64Data = bot.recording; // 获取 Base64 数据
-    const tempFileName = path.join(__dirname, `temp_audio_${req.query.id}.mp3`); // 临时文件名
+    // 方法1: 直接返回base64数据，让前端处理
+    res.set("Content-Type", "audio/mpeg");
+    res.set("Access-Control-Allow-Origin", "*");
+    res.set(
+      "Access-Control-Allow-Headers",
+      "Origin, X-Requested-With, Content-Type, Accept"
+    );
 
-    try {
-      // 将 Base64 数据写入临时文件
-      const buffer = Buffer.from(base64Data, "base64");
-      fs.writeFileSync(tempFileName, buffer);
-      // 发送文件作为响应
-      res.set("Content-Type", "audio/mpeg"); // 设置正确的内容类型
-      res.sendFile(tempFileName, (err) => {
-        if (err) {
-          console.error("Error sending file:", err);
-        }
-        fs.unlink(tempFileName, (unlinkErr) => {
-          if (unlinkErr) console.error("Error deleting file:", unlinkErr);
-        });
-      });
-    } catch (error) {
-      console.error("Error processing audio:", error);
-      return res
-        .status(500)
-        .json({ success: false, error: "Error processing audio." });
-    }
+    // 将base64数据转换为二进制并发送
+    const buffer = Buffer.from(bot.recording, "base64");
+    return res.send(buffer);
   });
 
   app.post(API_BASE_PATH + "/mp3", async (req, res) => {
@@ -842,6 +829,17 @@ async function get_api_server(proxy_utils) {
         .end();
     }
   );
+
+  // 添加CORS头部支持
+  app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header(
+      "Access-Control-Allow-Headers",
+      "Origin, X-Requested-With, Content-Type, Accept"
+    );
+    next();
+  });
+
   /*
    * Handle JSON Schema errors
    */
