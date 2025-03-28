@@ -1,27 +1,24 @@
-FROM node:12.16.2-stretch
+ARG NPM_REGISTRY=https://registry.npm.taobao.org
+FROM node:12-slim AS gui-builder
+COPY gui/package.json gui/package-lock.json /work/gui/
+RUN cd /work/gui && npm config set registry ${NPM_REGISTRY} && npm ci && npm cache clean --force
+COPY gui /work/gui
+RUN cd /work/gui && npm run build && npm cache clean --force
 
 
+FROM node:12-slim AS production
 COPY sources.list /etc/apt/sources.list
-RUN apt update && apt install ffmpeg -y
-
+RUN apt-get update && \
+	apt-get install -y --no-install-recommends ffmpeg && \
+	apt-get clean && \
+	rm -rf /var/lib/apt/lists/*
 
 WORKDIR /work/
-COPY anyproxy/ ./anyproxy/
 COPY package.json package-lock.json .
-RUN npm config set registry https://registry.npm.taobao.org && npm install
+RUN npm config set registry ${NPM_REGISTRY} && npm ci && npm cache clean --force
 
+COPY anyproxy/ ./anyproxy/
+COPY --from=gui-builder /work/gui/dist /work/gui/dist
 
-COPY gui/ ./gui/
-WORKDIR /work/gui
-RUN npm install && npm run build 
-
-WORKDIR /work/
 COPY utils.js api-server.js server.js database.js docker-entrypoint.sh .
-RUN /work/anyproxy/bin/anyproxy-ca --generate \
-	&& mkdir /work/ssl/ \
-	&& cp /root/.anyproxy/certificates/rootCA.* /work/ssl/ 
-RUN apt-get clean && npm cache clean -f
-
-
-
 ENTRYPOINT ["/work/docker-entrypoint.sh"]
