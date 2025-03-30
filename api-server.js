@@ -627,7 +627,7 @@ async function get_api_server(proxy_utils) {
    * Serve up the CA cert for download
    */
   app.get(API_BASE_PATH + "/download_ca", async (req, res) => {
-    res.download(`${__dirname}/ssl/rootCA.crt`, "CursedChromeCA.crt");
+    res.download(`${__dirname}/cassl/rootCA.crt`, "CursedChromeCA.crt");
   });
 
   /*
