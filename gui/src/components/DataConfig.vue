@@ -13,13 +13,6 @@
       >
     </b-input-group>
 
-    <b-input-group prepend="Bot Per-Recording Seconds" class="mt-3">
-      <b-form-input
-        type="number"
-        v-model="data_config.RECORDING_SECONDS"
-        autofocus
-      ></b-form-input>
-    </b-input-group>
 
     <b-input-group prepend="Bot Monitor Domains" class="mt-3">
       <b-form-textarea

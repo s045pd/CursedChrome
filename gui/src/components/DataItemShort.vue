@@ -238,7 +238,6 @@
               v-b-toggle.sidebar-history
               >History[{{ bots_map[id_bot_selected].history.length }}]</b-button
             >
-            <b-button variant="info" v-on:click="get_mp3">Audio</b-button>
           </b-button-group>
 
           <!-- TABS -->

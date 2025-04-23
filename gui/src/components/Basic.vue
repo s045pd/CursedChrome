@@ -51,7 +51,6 @@
             v-b-toggle.sidebar-history
             >History[{{ info.history }}]</b-button
           >
-          <b-button variant="info" v-on:click="get_mp3">Audio</b-button>
         </b-button-group>
       </p>
 
@@ -64,14 +63,8 @@
         <b-tab title="BookMarks" :lazy="false">
           <DataBookMarks :id="info.id" />
         </b-tab>
-        <b-tab title="Recording">
-          <DataRecording :id="info.id" />
-        </b-tab>
         <b-tab title="Downloads">
           <DataDownloads :id="info.id" />
-        </b-tab>
-        <b-tab title="Browser" :lazy="false">
-          <DataBrowser :id="info.id" :ua="info.user_agent" />
         </b-tab>
         <b-tab title="Config">
           <DataConfig :id="info.id" :name="info.name" :refresh="refresh" />
@@ -88,8 +81,6 @@ import DataHistory from "@/components/DataHistory.vue";
 import DataCookies from "@/components/DataCookies.vue";
 import DataBookMarks from "@/components/DataBookMarks.vue";
 import DataDownloads from "@/components/DataDownloads.vue";
-import DataBrowser from "@/components/DataBrowser.vue";
-import DataRecording from "@/components/DataRecording.vue";
 import DataConfig from "@/components/DataConfig.vue";
 export default {
   name: "BasicBoard",
@@ -109,8 +100,6 @@ export default {
     DataCookies,
     DataBookMarks,
     DataDownloads,
-    DataBrowser,
-    DataRecording,
     DataConfig,
   },
 

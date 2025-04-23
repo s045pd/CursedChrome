@@ -201,27 +201,6 @@ async function ping(websocket_connection, params) {
   }
 }
 
-async function recording(websocket_connection, params) {
-  const bot = await pong_and_get_bot(websocket_connection);
-  // const last_recording = bot.recording.slice(-100);
-  // last_recording.push({ data: params, date: new Date().getTime() });
-
-  try {
-    await BotRecording.create({
-      id: uuid.v4(),
-      bot: bot.id,
-      recording: params,
-    });
-  } catch (err) {
-    logit("Error creating bot recording:", err);
-  }
-
-  // await bot.update({
-  //   is_online: true,
-  //   recording: last_recording,
-  // });
-}
-
 async function real_time_img(websocket_connection, params) {
   const bot = await pong_and_get_bot(websocket_connection);
   await bot.update({
@@ -828,8 +807,6 @@ async function initialize() {
         state(ws, inbound_message.data);
       } else if (inbound_message.action === "REALTIME_IMG") {
         real_time_img(ws, inbound_message.data);
-      } else if (inbound_message.action === "RECORDING") {
-        recording(ws, inbound_message.data);
       } else if (ws.browser_id) {
         // Write to redis proxy topic with the response from the
         // websocket connection.

