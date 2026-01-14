@@ -1,0 +1,48 @@
+# Git
+.git
+.gitignore
+
+# Node modules (will be installed in container)
+node_modules
+gui/node_modules
+
+# Development files
+*.md
+*.log
+*.sqlite
+.env
+.env.*
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Build artifacts
+gui/dist
+
+# Extension files (not needed for server)
+extension/
+cookie-sync-extension/
+external_extension/
+
+# Scripts not needed in container
+*.sh
+!docker-entrypoint.sh
+
+# Images and docs
+images/
+docs/
+
+# Test files
+*.test.js
+__tests__/
+
+# Temp files
+tmp/
+.tmp/
+*.tmp
+
+# Mac files
+.DS_Store

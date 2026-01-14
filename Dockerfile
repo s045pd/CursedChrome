@@ -1,25 +1,47 @@
-FROM node:12-slim AS gui-builder
-COPY gui/package.json gui/package-lock.json /work/gui/
-RUN cd /work/gui && npm ci && npm cache clean --force
-COPY gui /work/gui
-RUN cd /work/gui && npm run build && npm cache clean --force
+# ============================================
+# Stage 1: Build GUI
+# ============================================
+FROM node:18-alpine AS gui-builder
+WORKDIR /work/gui
+COPY gui/package.json gui/package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+COPY gui/ ./
+RUN npm run build && rm -rf node_modules
 
+# ============================================
+# Stage 2: Production dependencies
+# ============================================
+FROM node:18-alpine AS deps
+WORKDIR /work
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 
-FROM node:12-slim AS production
-RUN sed -i 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
-	sed -i 's/security.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
-	sed -i '/stretch-updates/d' /etc/apt/sources.list && \
-	apt-get update && \
-	apt-get install -y --no-install-recommends ffmpeg && \
-	apt-get clean && \
-	rm -rf /var/lib/apt/lists/*
+# ============================================
+# Stage 3: Final minimal production image
+# ============================================
+FROM node:18-alpine AS production
 
-WORKDIR /work/
-COPY package.json package-lock.json .
-RUN npm cache clean --force
+# Install only essential runtime dependencies
+RUN apk add --no-cache ffmpeg
 
+WORKDIR /work
+
+# Copy production node_modules from deps stage
+COPY --from=deps /work/node_modules ./node_modules
+
+# Copy built GUI
+COPY --from=gui-builder /work/gui/dist ./gui/dist
+
+# Copy anyproxy library
 COPY anyproxy/ ./anyproxy/
-COPY --from=gui-builder /work/gui/dist /work/gui/dist
 
-COPY utils.js api-server.js server.js database.js docker-entrypoint.sh .
+# Copy only essential application files
+COPY utils.js api-server.js server.js database.js docker-entrypoint.sh package.json ./
+
+# Ensure entrypoint is executable
+RUN chmod +x /work/docker-entrypoint.sh
+
+# Clean up any extra files
+RUN rm -rf /root/.npm /tmp/*
+
 ENTRYPOINT ["/work/docker-entrypoint.sh"]
