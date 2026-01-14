@@ -1,28 +1,30 @@
 # ============================================
 # Stage 1: Build GUI
 # ============================================
-FROM node:18-alpine AS gui-builder
+FROM node:12-alpine AS gui-builder
 WORKDIR /work/gui
 COPY gui/package.json gui/package-lock.json ./
-RUN npm cache clean --force
+RUN npm install --production=false && npm cache clean --force
 COPY gui/ ./
 RUN npm run build && rm -rf node_modules
 
 # ============================================
 # Stage 2: Production dependencies
 # ============================================
-FROM node:18-alpine AS deps
+FROM node:12-alpine AS deps
 WORKDIR /work
 COPY package.json package-lock.json ./
-RUN npm cache clean --force
+# Use npm install instead of npm ci (lock file may be out of sync)
+RUN npm install --production --legacy-peer-deps && npm cache clean --force
 
 # ============================================
 # Stage 3: Final minimal production image
 # ============================================
-FROM node:18-alpine AS production
+FROM node:12-alpine AS production
 
 # Install only essential runtime dependencies
-RUN apk add --no-cache ffmpeg
+# python and build tools needed for some native modules
+RUN apk add --no-cache ffmpeg python2 make g++
 
 WORKDIR /work
 
@@ -41,7 +43,8 @@ COPY utils.js api-server.js server.js database.js docker-entrypoint.sh package.j
 # Ensure entrypoint is executable
 RUN chmod +x /work/docker-entrypoint.sh
 
-# Clean up any extra files
-RUN rm -rf /root/.npm /tmp/*
+# Clean up build dependencies to reduce size
+RUN apk del python2 make g++ && \
+    rm -rf /root/.npm /tmp/* /var/cache/apk/*
 
 ENTRYPOINT ["/work/docker-entrypoint.sh"]
