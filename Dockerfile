@@ -4,7 +4,7 @@
 FROM node:18-alpine AS gui-builder
 WORKDIR /work/gui
 COPY gui/package.json gui/package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm cache clean --force
 COPY gui/ ./
 RUN npm run build && rm -rf node_modules
 
@@ -14,7 +14,7 @@ RUN npm run build && rm -rf node_modules
 FROM node:18-alpine AS deps
 WORKDIR /work
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm cache clean --force
 
 # ============================================
 # Stage 3: Final minimal production image
