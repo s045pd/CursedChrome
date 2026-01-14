@@ -16,7 +16,7 @@ RUN sed -i 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
 
 WORKDIR /work/
 COPY package.json package-lock.json .
-RUN npm ci && npm cache clean --force
+RUN npm cache clean --force
 
 COPY anyproxy/ ./anyproxy/
 COPY --from=gui-builder /work/gui/dist /work/gui/dist
