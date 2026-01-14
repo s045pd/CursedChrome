@@ -245,7 +245,7 @@ BotRecording.init(
     },
     timestamp: {
       type: Sequelize.DATE,
-      allowNull: false,
+      allowNull: true,  // Allow null for backwards compatibility
       defaultValue: Sequelize.NOW,
     },
     session_id: {

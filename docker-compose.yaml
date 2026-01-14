@@ -3,9 +3,10 @@ services:
   redis:
     image: "redis:alpine"
     command: redis-server --appendonly no
+    restart: unless-stopped
   db:
     image: postgres
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_PASSWORD: cursedchrome
       POSTGRES_USER: cursedchrome
@@ -26,7 +27,7 @@ services:
       BCRYPT_ROUNDS: 10
       BAK_SERVER: "http://localhost:8080/xxxx"
     ports:
-      - "127.0.0.1:8080:8080" # Proxy server
+      - "127.0.0.1:18080:8080" # Proxy server (mapped to 18080 to avoid conflict)
       - "127.0.0.1:4343:4343" # WebSocket server (talks with implants)
       - "127.0.0.1:8118:8118" # Web panel
     healthcheck:
