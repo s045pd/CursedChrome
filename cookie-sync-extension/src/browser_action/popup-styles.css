@@ -1,0 +1,11 @@
+.toast {
+    opacity: 1 !important;
+}
+
+#loader {
+    display: none; /* Hidden by default */
+}
+
+#app {
+    min-width: 500px;
+}

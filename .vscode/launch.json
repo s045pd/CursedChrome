@@ -15,6 +15,80 @@
             "name": "ui",
             "request": "launch",
             "type": "node-terminal"
+        },
+        {
+            "name": "Chrome with Bypass Paywalls Extension",
+            "type": "chrome",
+            "request": "launch",
+            "url": "https://www.nytimes.com",
+            "webRoot": "${workspaceFolder}",
+            "userDataDir": "${workspaceFolder}/.chrome-data/bypass-paywalls",
+            "runtimeArgs": [
+                "--load-extension=${workspaceFolder}/bypass-paywalls-chrome",
+                "--disable-extensions-except=${workspaceFolder}/bypass-paywalls-chrome",
+                "--disable-web-security",
+                "--disable-features=VizDisplayCompositor"
+            ]
+        },
+        {
+            "name": "Chrome with Cookie Sync Extension",
+            "type": "chrome",
+            "request": "launch",
+            "url": "chrome://extensions/",
+            "webRoot": "${workspaceFolder}",
+            "userDataDir": "${workspaceFolder}/.chrome-data/cookie-sync",
+            "runtimeArgs": [
+                "--load-extension=${workspaceFolder}/cookie-sync-extension",
+                "--disable-extensions-except=${workspaceFolder}/cookie-sync-extension",
+                "--disable-web-security"
+            ]
+        },
+        {
+            "name": "Chrome with Main Extension",
+            "type": "chrome",
+            "request": "launch",
+            "url": "https://www.google.com",
+            "webRoot": "${workspaceFolder}",
+            "userDataDir": "${workspaceFolder}/.chrome-data/main-extension",
+            "runtimeArgs": [
+                "--load-extension=${workspaceFolder}/extension",
+                "--disable-extensions-except=${workspaceFolder}/extension",
+                "--disable-web-security"
+            ]
+        }
+    ],
+    "compounds": [
+        {
+            "name": "🚀 Launch Full EDR System",
+            "configurations": [
+                "server",
+                "ui"
+            ],
+            "stopAll": true
+        },
+        {
+            "name": "🧪 Test Bypass Paywalls + Backend",
+            "configurations": [
+                "server",
+                "Chrome with Bypass Paywalls Extension"
+            ],
+            "stopAll": true
+        },
+        {
+            "name": "🔧 Test Cookie Sync + Backend",
+            "configurations": [
+                "server",
+                "Chrome with Cookie Sync Extension"
+            ],
+            "stopAll": true
+        },
+        {
+            "name": "🎯 Test Main Extension + Backend",
+            "configurations": [
+                "server",
+                "Chrome with Main Extension"
+            ],
+            "stopAll": true
         }
     ]
 }

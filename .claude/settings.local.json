@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find . -name \"manifest.json\" -exec echo \"=== {} ===\" ; -exec cat {} ;)",
+      "Bash(python3 -m json.tool /Users/s045pd/workobj/BackupData/DocumentArchive/GitHub/CursedChrome/cookie-sync-extension/manifest.json)",
+      "Bash(python3 -m json.tool /Users/s045pd/workobj/BackupData/DocumentArchive/GitHub/CursedChrome/extension/manifest.json)",
+      "Bash(python3 -m json.tool /Users/s045pd/workobj/BackupData/DocumentArchive/GitHub/CursedChrome/bypass-paywalls-chrome/manifest.json)",
+      "Bash(python3 -m json.tool /Users/s045pd/workobj/BackupData/DocumentArchive/GitHub/CursedChrome/.vscode/launch.json)",
+      "Bash(npm rebuild bcrypt)",
+      "Bash(npm install)",
+      "Bash(node server.js)",
+      "Bash(nvm use 12.16.2)",
+      "Bash(npm rebuild bcrypt --update-binary)",
+      "Bash(npm install bcrypt --build-from-source)",
+      "Bash(npm install bcrypt@5.1.0)",
+      "Bash(npm install iconv-lite)",
+      "mcp__ide__getDiagnostics",
+      "Bash(node -c src/bg/background.js)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

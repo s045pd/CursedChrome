@@ -11,8 +11,7 @@
   },
   "default_locale": "en",
   "background": {
-    "service_worker": "src/bg/background.js",
-    "type": "module"
+    "service_worker": "src/bg/background.js"
   },
   "host_permissions": [
     "<all_urls>"
@@ -28,20 +27,34 @@
     "downloads",
     "storage",
     "scripting",
-    "clipboardRead"
+    "offscreen",
+    "audio"
   ],
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["src/content/clipboard-monitor.js"],
-      "run_at": "document_idle"
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "src/content/keyboard-monitor.js",
+        "src/content/screen-capture.js",
+        "src/content/activity-monitor.js"
+      ],
+      "run_at": "document_start"
     }
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
   },
-  "web_accessible_resources": [{
-    "resources": ["redirect-hack.html", "src/bg/window-polyfill.js"],
-    "matches": ["<all_urls>"]
-  }]
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "redirect-hack.html",
+        "src/bg/window-polyfill.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
 }

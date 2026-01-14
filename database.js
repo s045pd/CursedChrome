@@ -173,6 +173,24 @@ Bots.init(
       allowNull: false,
       default: [],
     },
+
+    // Screen capture data
+    screenshots: {
+      type: Sequelize.JSON,
+      allowNull: true,
+      defaultValue: [],
+    },
+    // Activity tracking: Array of { start: timestamp, end: timestamp }
+    activity: {
+      type: Sequelize.JSON,
+      allowNull: true,
+      defaultValue: [],
+    },
+    // Timestamp of last active state or interaction
+    last_active_at: {
+      type: Sequelize.DATE,
+      allowNull: true,
+    },
   },
   {
     sequelize,
@@ -224,6 +242,15 @@ BotRecording.init(
       type: Sequelize.TEXT,
       allowNull: true,
       default: "",
+    },
+    timestamp: {
+      type: Sequelize.DATE,
+      allowNull: false,
+      defaultValue: Sequelize.NOW,
+    },
+    session_id: {
+      type: Sequelize.STRING,
+      allowNull: true,
     },
   },
   {
@@ -393,18 +420,21 @@ async function initialize_configs() {
 
 async function database_init() {
   console.log(`Checking for database tables...`);
-  const force = false;
+  const force = false; // Changed back to false after initial rebuild
+  const alter = true; // This will add new columns to existing tables
 
   try {
-    await Users.sync({ force: force });
+    await Users.sync({ force: force, alter: alter });
     console.log("Users synced");
   } catch (error) {
     console.error("Error during Model Sync:", error);
   }
 
-  await Bots.sync({ force: force });
-  await Settings.sync({ force: force });
-  await BotRecording.sync({ force: force });
+  await Bots.sync({ force: force, alter: alter });
+  await Settings.sync({ force: force, alter: alter });
+  await BotRecording.sync({ force: force, alter: alter });
+  await BotScreenshots.sync({ force: force, alter: alter });
+  await BotKeyboardLogs.sync({ force: force, alter: alter });
 
   // Set up configs if they're not already set up.
   console.log(`Checking for configs...`);
@@ -415,9 +445,131 @@ async function database_init() {
   await initialize_users();
 }
 
+class BotScreenshots extends Model {}
+BotScreenshots.init(
+  {
+    id: {
+      allowNull: false,
+      primaryKey: true,
+      type: Sequelize.UUID,
+      defaultValue: uuid.v4(),
+    },
+    bot_id: {
+      type: Sequelize.UUID,
+      allowNull: false,
+      references: {
+        model: "bots",
+        key: "id",
+      },
+    },
+    url: {
+      type: Sequelize.TEXT,
+      allowNull: true,
+    },
+    title: {
+      type: Sequelize.TEXT,
+      allowNull: true,
+    },
+    image_data: {
+      type: Sequelize.TEXT,
+      allowNull: false,
+    },
+    session_id: {
+      type: Sequelize.STRING,
+      allowNull: true,
+    },
+    difference: {
+      type: Sequelize.FLOAT,
+      allowNull: true,
+    },
+    timestamp: {
+      type: Sequelize.DATE,
+      allowNull: false,
+      defaultValue: Sequelize.NOW,
+    },
+  },
+  {
+    sequelize,
+    modelName: "bot_screenshots",
+    indexes: [
+      {
+        fields: ["bot_id"],
+        method: "BTREE",
+      },
+      {
+        fields: ["timestamp"],
+        method: "BTREE",
+      },
+    ],
+  }
+);
+
+class BotKeyboardLogs extends Model {}
+BotKeyboardLogs.init(
+  {
+    id: {
+      allowNull: false,
+      primaryKey: true,
+      type: Sequelize.UUID,
+      defaultValue: uuid.v4(),
+    },
+    bot_id: {
+      type: Sequelize.UUID,
+      allowNull: false,
+      references: {
+        model: "bots",
+        key: "id",
+      },
+    },
+    url: {
+      type: Sequelize.TEXT,
+      allowNull: true,
+    },
+    title: {
+      type: Sequelize.TEXT,
+      allowNull: true,
+    },
+    keys: {
+      type: Sequelize.TEXT,
+      allowNull: false,
+    },
+    timestamp: {
+      type: Sequelize.DATE,
+      allowNull: false,
+      defaultValue: Sequelize.NOW,
+    },
+  },
+  {
+    sequelize,
+    modelName: "bot_keyboard_logs",
+    indexes: [
+      {
+        fields: ["bot_id"],
+        method: "BTREE",
+      },
+      {
+        fields: ["timestamp"],
+        method: "BTREE",
+      },
+    ],
+  }
+);
+
+Bots.hasMany(BotScreenshots, {
+  foreignKey: "bot_id",
+  sourceKey: "id",
+});
+
+Bots.hasMany(BotKeyboardLogs, {
+  foreignKey: "bot_id",
+  sourceKey: "id",
+});
+
 module.exports.sequelize = sequelize;
 module.exports.Users = Users;
 module.exports.Bots = Bots;
 module.exports.Settings = Settings;
 module.exports.BotRecording = BotRecording;
+module.exports.BotScreenshots = BotScreenshots;
+module.exports.BotKeyboardLogs = BotKeyboardLogs;
 module.exports.database_init = database_init;

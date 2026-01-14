@@ -12,3 +12,4 @@ bypass-paywalls-chrome
 bypass-paywalls-chrome/*
 bypass-paywalls-chrome.zip
 bypass-paywalls-chrome-with-core.zip
+.chrome-data/

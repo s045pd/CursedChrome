@@ -13,19 +13,22 @@
           <b-button
             :disabled="!cookies_search_word"
             @click="cookies_search_word = ''"
+            variant="outline-secondary"
             >Clear</b-button
           >
-
           <b-button
+            variant="primary"
             @click="copyToClipboard"
+            title="Copy all visible cookies to clipboard"
           >
-            <font-awesome-icon
-              :icon="['fas', 'clipboard']"
-              class="icon alt mr-1 ml-1"
-            />Copy</b-button
-          >
+            <i class="fa fa-copy"></i> Copy
+          </b-button>
         </b-input-group-append>
       </b-input-group>
+
+      <div class="my-2 text-muted small">
+        Showing {{ filteredInfo.length > 0 || cookies_search_word ? filteredInfo.length : info.length }} cookies
+      </div>
 
       <b-table
         id="cookies_table"
@@ -39,7 +42,18 @@
         hover
         :tbody-tr-class="cookies_row_class"
         @filtered="on_cookies_filtered"
-      ></b-table>
+        responsive="sm"
+        thead-class="bg-light"
+      >
+        <template #cell(value)="data">
+          <div class="text-truncate" style="max-width: 200px;" :title="data.value">
+            {{ data.value }}
+          </div>
+        </template>
+        <template #cell(domain)="data">
+          <span class="font-weight-bold">{{ data.value }}</span>
+        </template>
+      </b-table>
     </div>
     <b-pagination
       striped
@@ -65,6 +79,10 @@ export default {
       type: String,
       required: true,
     },
+    // enableClipboard: {
+    //   type: Boolean,
+    //   default: false,
+    // },
   },
   data() {
     return {
@@ -122,18 +140,16 @@ export default {
     this.fetchData();
   },
   methods: {
-    copyToClipboard() {
-      const textToCopy = JSON.stringify(
-        this.cookies_search_word ? this.filteredInfo : this.info
-      );
+    async copyToClipboard() {
+      const target = (this.cookies_search_word || this.filteredInfo.length > 0) ? this.filteredInfo : this.info;
+      const textToCopy = JSON.stringify(target, null, 2);
       
-      navigator.clipboard.writeText(textToCopy)
-        .then(() => {
-          this.copy_toast();
-        })
-        .catch(err => {
-          console.error('Failed to copy text: ', err);
-        });
+      try {
+        await navigator.clipboard.writeText(textToCopy);
+        this.copy_toast();
+      } catch (err) {
+        console.error('Failed to copy text: ', err);
+      }
     },
     copy_toast() {
       copy_toast();
@@ -171,12 +187,24 @@ export default {
     on_cookies_filtered(filtered_items) {
       this.cookies_page = 1;
       this.filteredInfo = filtered_items;
-      this.bot_length_map[this.id_bot_selected]["cookies"] = filtered_items.length;
     },
   },
 };
 </script>
 
 <style scoped>
-/* Add component-specific styles here */
+.text-truncate {
+  display: inline-block;
+  cursor: help;
+}
+#cookies_table >>> td {
+  vertical-align: middle;
+  white-space: nowrap;
+}
+#cookies_table >>> th {
+  border-top: none;
+}
+.bg-light {
+  background-color: #f8f9fa !important;
+}
 </style>

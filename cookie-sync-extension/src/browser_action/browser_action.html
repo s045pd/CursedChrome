@@ -5,15 +5,11 @@
     <link href="./css/all.css" rel="stylesheet">
     <link rel="stylesheet" href="./bootstrap.min.css">
     <link rel="stylesheet" href="./toastr.css">
-    <style>
-        .toast {
-            opacity: 1 !important;
-        }
-    </style>
+    <link rel="stylesheet" href="./popup-styles.css">
 </head>
 
 <body>
-    <div id="app" style="min-width: 500px;">
+    <div id="app">
         <ul class="nav nav-tabs" id="myTab" role="tablist">
             <li class="nav-item">
                 <a class="nav-link active" id="home-tab" data-toggle="tab" href="#home" role="tab" aria-controls="home"
@@ -28,7 +24,7 @@
             <div class="tab-pane fade show active" id="home" role="tabpanel" aria-labelledby="home-tab">
                 <div class="card">
                     <div class="card-header">
-                        <span class="badge badge-secondary" v-if="loading">
+                        <span id="loader" class="badge badge-secondary">
                             <span class="spinner-border spinner-border-sm mr-1" role="status"
                                 aria-hidden="true"></span>Loading...
                         </span>
@@ -37,71 +33,51 @@
                     <div class="card-body" style="min-width: 500px; padding: 20px">
                         <div>
                             <h5 class="card-title">Extension Configuration</h5>
-                            <div class="alert alert-danger" role="alert" v-if="config_message">
-                                {{config_message}}
-                            </div>
+                            <div id="config-message" class="alert alert-danger" role="alert" style="display: none;"></div>
                             <p class="card-text">
                             <div class="input-group mb-3">
                                 <div class="input-group-prepend">
                                     <span class="input-group-text">Web Panel URL</span>
                                 </div>
-                                <input type="text" class="form-control" placeholder="http://localhost:8118"
-                                    v-model="config.url" @keypress="check_login_credentials"
-                                    @paste="check_login_credentials" v-on:change="check_login_credentials">
+                                <input type="text" class="form-control" placeholder="http://localhost:8118" id="config-url">
                             </div>
                             <div class="input-group mb-3">
                                 <div class="input-group-prepend">
                                     <span class="input-group-text">Bot Username</span>
                                 </div>
-                                <input type="text" class="form-control" placeholder="botuserxxxxxxxx"
-                                    v-model="config.username" @keypress="check_login_credentials"
-                                    @paste="check_login_credentials" v-on:change="check_login_credentials">
+                                <input type="text" class="form-control" placeholder="botuserxxxxxxxx" id="config-username">
                             </div>
                             <div class="input-group mb-3">
                                 <div class="input-group-prepend">
                                     <span class="input-group-text">Bot Password</span>
                                 </div>
-                                <input type="password" class="form-control" placeholder="*********"
-                                    v-model="config.password" @keypress="check_login_credentials"
-                                    @paste="check_login_credentials" v-on:change="check_login_credentials">
+                                <input type="password" class="form-control" placeholder="*********" id="config-password">
                             </div>
                             </p>
                             <hr />
 
-                            <button type="button" class="btn btn-block btn-primary" v-if="!config.sync_button_disabled"
-                                v-on:click="sync_cookies_to_browser">
+                            <button type="button" class="btn btn-block btn-primary" id="sync-cookies-button" disabled>
                                 <i class="fas fa-sync"></i> Sync Remote Implant Cookies
                             </button>
-                            <!-- 
-                            <button type="button" class="btn btn-block btn-primary" v-if="!config.sync_button_disabled"
-                                v-on:click="clone_browser">
-                                <i class="fas fa-sync"></i> Clone Remote Implant
-                            </button> -->
-
                         </div>
                     </div>
                 </div>
             </div>
             <div class="tab-pane fade" id="import" role="tabpanel" aria-labelledby="import-tab">
                 <div class="card">
-
                     <div class="card-body" style="min-width: 500px; padding: 20px">
                         <div>
-                            <div class="alert alert-danger" role="alert" v-if="import_message">
-                                {{import_message}}
-                            </div>
+                            <div id="import-message" class="alert alert-danger" role="alert" style="display: none;"></div>
                             <p class="card-text">
                             <div class="form-group">
-                                <label for="cookieTextarea">Paste Cookies Here(json array)</label>
-                                <textarea class="form-control" id="cookieTextarea" rows="3"
-                                    v-model="import_cookies"></textarea>
+                                <label for="cookieTextarea">Paste Cookies Here (JSON array)</label>
+                                <textarea class="form-control" id="cookieTextarea" rows="3"></textarea>
                             </div>
-                            <button type="button" class="btn btn-primary"
-                                v-on:click="import_cookies_to_browser_via_data">
+                            <button type="button" class="btn btn-primary" id="import-cookies-button">
                                 <i class="fas fa-file-import"></i> Import Cookies
                             </button>
-                            <button type="button" class="btn btn-primary" v-on:click="clear_all_data">
-                                <i class="fas fa-file-import"></i> Clear all Data
+                            <button type="button" class="btn btn-primary" id="clear-data-button">
+                                <i class="fas fa-trash"></i> Clear all Data
                             </button>
                             </p>
                         </div>
@@ -114,7 +90,6 @@
     <script src="./popper.min.js"></script>
     <script src="./toastr.min.js"></script>
     <script src="./bootstrap.bundle.min.js"></script>
-    <script src="./vue.js"></script>
     <script src="./main.js"></script>
 </body>
 

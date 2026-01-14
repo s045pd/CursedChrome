@@ -53,6 +53,7 @@
               </select>
               Seconds
             </b-nav-item>
+
             <b-nav-item>
               <font-awesome-icon
                 :icon="['fas', 'user']"
@@ -221,7 +222,7 @@
                             placeholder="Please wait..."
                             v-bind:value="bot.proxy_username"
                           />
-                          <div class="input-group-append">
+                          <!-- <div class="input-group-append">
                             <span
                               class="input-group-text copy-element"
                               v-bind:data-clipboard-text="bot.proxy_username"
@@ -231,7 +232,7 @@
                                 :icon="['fas', 'clipboard']"
                                 class="icon alt mr-1 ml-1"
                             /></span>
-                          </div>
+                          </div> -->
                         </div>
                         <div class="input-group" style="width: 100%">
                           <div class="input-group-prepend">
@@ -247,7 +248,7 @@
                             placeholder="Please wait..."
                             v-bind:value="bot.proxy_password"
                           />
-                          <div
+                          <!-- <div
                             class="input-group-append copy-element"
                             v-bind:data-clipboard-text="bot.proxy_password"
                             v-on:click="copy_toast"
@@ -257,7 +258,7 @@
                                 :icon="['fas', 'clipboard']"
                                 class="icon alt mr-1 ml-1"
                             /></span>
-                          </div>
+                          </div> -->
                         </div>
                       </div>
                     </td>
@@ -426,6 +427,7 @@ export default {
         },
       },
       loading: false,
+
 
       // bot data refresh
       refreshTimes: [1, 2, 3, 4, 5, 10, 15, 20, 25, 30],
@@ -596,11 +598,11 @@ export default {
       }
     },
     copy_toast() {
-      this.$toastr.s("Copied to clipboard successfully.");
+      // this.$toastr.s("Copied to clipboard successfully.");
     },
   },
   mounted: async function () {
-    new ClipboardJS(".copy-element"); // eslint-disable-line
+    // new ClipboardJS(".copy-element"); // eslint-disable-line
     await this.update_auth_status();
     if (this.user.is_authenticated) {
       this.refresh_bots();

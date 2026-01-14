@@ -21,7 +21,8 @@
     "vue": "^2.6.11",
     "vue-bootstrap-table2": "^1.1.8",
     "vue-moment": "^4.1.0",
-    "vue-toastr": "^2.1.2"
+    "vue-toastr": "^2.1.2",
+    "wavesurfer.js": "^7.12.1"
   },
   "devDependencies": {
     "@babel/plugin-proposal-class-properties": "^7.18.6",
