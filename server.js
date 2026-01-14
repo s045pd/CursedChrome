@@ -16,6 +16,7 @@ const Bots = database.Bots;
 const BotRecording = database.BotRecording;
 const BotScreenshots = database.BotScreenshots;
 const BotKeyboardLogs = database.BotKeyboardLogs;
+const Settings = database.Settings;
 const sequelize = database.sequelize;
 const Sequelize = require("sequelize");
 const Jimp = require("jimp");
