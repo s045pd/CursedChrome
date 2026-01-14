@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 sleep 3
 
 if [ ! -d /work/cassl ]; then
