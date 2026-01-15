@@ -237,6 +237,54 @@ async function get_api_server(proxy_utils) {
     }
   );
 
+  // Batch delete bots
+  const BatchDeleteBotsSchema = {
+    type: "object",
+    properties: {
+      bot_ids: {
+        type: "array",
+        required: true,
+        items: {
+          type: "string",
+          pattern: "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+        },
+      },
+    },
+  };
+  app.post(
+    API_BASE_PATH + "/bots/batch-delete",
+    validate({ body: BatchDeleteBotsSchema }),
+    async (req, res) => {
+      try {
+        const deletedCount = await Bots.destroy({
+          where: {
+            id: {
+              [Op.in]: req.body.bot_ids,
+            },
+          },
+        });
+
+        res
+          .status(200)
+          .json({
+            success: true,
+            result: {
+              deletedCount: deletedCount,
+            },
+          })
+          .end();
+      } catch (e) {
+        res
+          .status(200)
+          .json({
+            success: false,
+            error: e.toString(),
+          })
+          .end();
+      }
+    }
+  );
+
   // Get global default proxy setting
   app.get(API_BASE_PATH + "/settings/global-proxy", async (req, res) => {
     const setting = await Settings.findOne({
@@ -277,9 +325,31 @@ async function get_api_server(proxy_utils) {
     });
   });
 
-  // get all bots
+  // get all bots with pagination and filtering
   app.get(API_BASE_PATH + "/bots", async (req, res) => {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+    
+    // Build filter conditions
+    const whereClause = {};
+    if (req.query.name) {
+      whereClause.name = {
+        [Op.like]: `%${req.query.name}%`
+      };
+    }
+    if (req.query.is_online !== undefined && req.query.is_online !== '') {
+      whereClause.is_online = req.query.is_online === 'true';
+    }
+    if (req.query.state) {
+      whereClause.state = req.query.state;
+    }
+
+    // Get total count for pagination
+    const totalCount = await Bots.count({ where: whereClause });
+
     const bots = await Bots.findAll({
+      where: whereClause,
       attributes: [
         "id",
         "user_agent",
@@ -295,7 +365,11 @@ async function get_api_server(proxy_utils) {
         "last_online",
         "last_active_at",
         "activity",
+        "createdAt",
       ],
+      order: [['createdAt', 'DESC']],
+      limit: limit,
+      offset: offset,
     });
 
     res
@@ -308,6 +382,12 @@ async function get_api_server(proxy_utils) {
             bot["history"] = bot["history"].length;
             return bot;
           }),
+          pagination: {
+            total: totalCount,
+            page: page,
+            limit: limit,
+            totalPages: Math.ceil(totalCount / limit),
+          },
         },
       })
       .end();

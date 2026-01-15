@@ -164,10 +164,85 @@
             align="center"
           >
             <b-card-text>
+              <!-- Filter and Batch Operations -->
+              <b-row class="mb-3">
+                <b-col cols="12">
+                  <b-card bg-variant="light">
+                    <b-row>
+                      <b-col md="3">
+                        <b-form-group label="Filter by Name" label-for="filter-name">
+                          <b-form-input
+                            id="filter-name"
+                            v-model="filters.name"
+                            placeholder="Enter bot name"
+                            @input="applyFilters"
+                          ></b-form-input>
+                        </b-form-group>
+                      </b-col>
+                      <b-col md="2">
+                        <b-form-group label="Online Status" label-for="filter-online">
+                          <b-form-select
+                            id="filter-online"
+                            v-model="filters.is_online"
+                            :options="onlineStatusOptions"
+                            @change="applyFilters"
+                          ></b-form-select>
+                        </b-form-group>
+                      </b-col>
+                      <b-col md="2">
+                        <b-form-group label="Lock Status" label-for="filter-state">
+                          <b-form-select
+                            id="filter-state"
+                            v-model="filters.state"
+                            :options="stateOptions"
+                            @change="applyFilters"
+                          ></b-form-select>
+                        </b-form-group>
+                      </b-col>
+                      <b-col md="2">
+                        <b-form-group label="Per Page" label-for="page-size">
+                          <b-form-select
+                            id="page-size"
+                            v-model="pagination.limit"
+                            :options="pageSizeOptions"
+                            @change="changePageSize"
+                          ></b-form-select>
+                        </b-form-group>
+                      </b-col>
+                      <b-col md="3" class="d-flex align-items-end">
+                        <b-button-group class="w-100">
+                          <b-button variant="secondary" @click="clearFilters">
+                            <font-awesome-icon :icon="['fas', 'redo']" class="mr-1" />
+                            Clear Filters
+                          </b-button>
+                          <b-button 
+                            variant="danger" 
+                            @click="batchDeleteBots"
+                            :disabled="selectedBots.length === 0"
+                          >
+                            <font-awesome-icon :icon="['fas', 'trash']" class="mr-1" />
+                            Batch Delete ({{ selectedBots.length }})
+                          </b-button>
+                        </b-button-group>
+                      </b-col>
+                    </b-row>
+                  </b-card>
+                </b-col>
+              </b-row>
+
               <h1>Connected Browser Bot(s)</h1>
+              <div v-if="pagination.total > 0" class="text-muted mb-2">
+                Total {{ pagination.total }} bots, showing {{ (pagination.page - 1) * pagination.limit + 1 }} - {{ Math.min(pagination.page * pagination.limit, pagination.total) }}
+              </div>
               <table class="table table-striped">
                 <thead>
                   <tr>
+                    <th scope="col" style="width: 50px;">
+                      <b-form-checkbox
+                        v-model="selectAll"
+                        @change="toggleSelectAll"
+                      ></b-form-checkbox>
+                    </th>
                     <th scope="col">Capture</th>
                     <th scope="col">Name</th>
                     <th scope="col">HTTP Proxy Credentials</th>
@@ -179,9 +254,15 @@
                 </thead>
                 <tbody>
                   <tr
-                    v-for="bot in Object.values(bots_map)"
+                    v-for="bot in bots_list"
                     v-bind:key="bot.id"
                   >
+                    <td style="vertical-align: middle;">
+                      <b-form-checkbox
+                        v-model="selectedBots"
+                        :value="bot.id"
+                      ></b-form-checkbox>
+                    </td>
                     <td scope="row" style="vertical-align: middle">
                       <b-img
                         :src="bot.current_tab_image"
@@ -328,6 +409,21 @@
                   </tr>
                 </tbody>
               </table>
+              
+              <!-- Pagination -->
+              <b-row v-if="pagination.totalPages > 1" class="mt-3">
+                <b-col cols="12" class="d-flex justify-content-center">
+                  <b-pagination
+                    v-model="pagination.page"
+                    :total-rows="pagination.total"
+                    :per-page="pagination.limit"
+                    @change="changePage"
+                    align="center"
+                    size="md"
+                    class="mb-0"
+                  ></b-pagination>
+                </b-col>
+              </b-row>
             </b-card-text>
           </b-card>
         </b-card-group>
@@ -428,7 +524,6 @@ export default {
       },
       loading: false,
 
-
       // bot data refresh
       refreshTimes: [1, 2, 3, 4, 5, 10, 15, 20, 25, 30],
       refreshTime: 5,
@@ -436,9 +531,45 @@ export default {
 
       // bot data
       bots_map: {},
+      bots_list: [],
       bot_length_map: {},
       selected_bot: {},
       id_bot_selected: null,
+
+      // Pagination
+      pagination: {
+        page: 1,
+        limit: 10,
+        total: 0,
+        totalPages: 0,
+      },
+
+      // Filters
+      filters: {
+        name: "",
+        is_online: "",
+        state: "",
+      },
+
+      // Batch operations
+      selectedBots: [],
+      selectAll: false,
+
+      // Options for filters
+      onlineStatusOptions: [
+        { value: "", text: "All" },
+        { value: "true", text: "Online" },
+        { value: "false", text: "Offline" },
+      ],
+      stateOptions: [
+        { value: "", text: "All" },
+        { value: "locked", text: "Locked" },
+        { value: "unlocked", text: "Unlocked" },
+      ],
+      pageSizeOptions: [5, 10, 20, 50, 100],
+
+      // Debounce timer for filter
+      filterDebounceTimer: null,
     };
   },
   computed: {
@@ -447,6 +578,18 @@ export default {
         this.update_password.new_password ===
         this.update_password.new_password_again
       );
+    },
+  },
+  watch: {
+    selectedBots(newVal) {
+      // Update selectAll checkbox based on selection
+      if (newVal.length === 0) {
+        this.selectAll = false;
+      } else if (newVal.length === this.bots_list.length && this.bots_list.length > 0) {
+        this.selectAll = true;
+      } else {
+        this.selectAll = false;
+      }
     },
   },
   methods: {
@@ -588,15 +731,134 @@ export default {
       this.id_bot_selected = null;
     },
     async refresh_bots() {
-      const response = await api_request("GET", "/bots");
+      const params = {
+        page: this.pagination.page,
+        limit: this.pagination.limit,
+      };
+
+      // Add filters if they exist
+      if (this.filters.name) {
+        params.name = this.filters.name;
+      }
+      if (this.filters.is_online !== "") {
+        params.is_online = this.filters.is_online;
+      }
+      if (this.filters.state) {
+        params.state = this.filters.state;
+      }
+
+      const response = await api_request("GET", "/bots", params);
+      
+      // Update bots_map for compatibility with existing code
+      this.bots_map = {};
       response.bots.map((bot) => {
         this.bots_map[bot.id] = bot;
       });
+      
+      // Update bots_list for table display
+      this.bots_list = response.bots;
+      
+      // Update pagination info
+      if (response.pagination) {
+        this.pagination.total = response.pagination.total;
+        this.pagination.totalPages = response.pagination.totalPages;
+      }
+
       // Update selected_bot if there's a bot currently selected
       if (this.id_bot_selected) {
         this.selected_bot = copy(this.bots_map?.[this.id_bot_selected] || {});
       }
+
+      // Clear selections if current page changes
+      this.selectedBots = [];
+      this.selectAll = false;
     },
+
+    // Filter methods
+    applyFilters() {
+      // Debounce filter application
+      if (this.filterDebounceTimer) {
+        clearTimeout(this.filterDebounceTimer);
+      }
+      this.filterDebounceTimer = setTimeout(() => {
+        this.pagination.page = 1; // Reset to first page when filtering
+        this.refresh_bots();
+      }, 500);
+    },
+
+    clearFilters() {
+      this.filters.name = "";
+      this.filters.is_online = "";
+      this.filters.state = "";
+      this.pagination.page = 1;
+      this.refresh_bots();
+    },
+
+    // Pagination methods
+    changePage(page) {
+      this.pagination.page = page;
+      this.refresh_bots();
+    },
+
+    changePageSize() {
+      this.pagination.page = 1; // Reset to first page when changing page size
+      this.refresh_bots();
+    },
+
+    // Batch selection methods
+    toggleSelectAll() {
+      if (this.selectAll) {
+        this.selectedBots = this.bots_list.map(bot => bot.id);
+      } else {
+        this.selectedBots = [];
+      }
+    },
+
+    // Batch delete
+    async batchDeleteBots() {
+      if (this.selectedBots.length === 0) {
+        this.$toastr.w("Please select bots to delete first");
+        return;
+      }
+
+      this.$bvModal
+        .msgBoxConfirm(
+          `Are you sure you want to delete ${this.selectedBots.length} selected bot(s)? This action cannot be undone!`,
+          {
+            title: "Batch Delete Confirmation",
+            size: "md",
+            buttonSize: "sm",
+            okVariant: "danger",
+            okTitle: "Delete",
+            cancelTitle: "Cancel",
+            footerClass: "p-2",
+            hideHeaderClose: false,
+            centered: true,
+          }
+        )
+        .then(async () => {
+          try {
+            await api_request(
+              "POST",
+              "/bots/batch-delete",
+              {},
+              {
+                bot_ids: this.selectedBots,
+              }
+            );
+            this.$toastr.s(`Successfully deleted ${this.selectedBots.length} bot(s)`);
+            this.selectedBots = [];
+            this.selectAll = false;
+            setTimeout(() => {
+              this.refresh_bots();
+            }, 1000);
+          } catch (e) {
+            this.$toastr.e("Batch delete failed: " + e.message);
+          }
+        })
+        .catch(() => {});
+    },
+
     copy_toast() {
       // this.$toastr.s("Copied to clipboard successfully.");
     },
