@@ -21,7 +21,7 @@
           center
           thumbnail
           fluid
-          :src="info.current_tab_image"
+          :src="`/api/v1/bots/image/${info.id}`"
           width="800"
           height="450"
         ></b-img-lazy>
