@@ -265,7 +265,7 @@
                     </td>
                     <td scope="row" style="vertical-align: middle">
                       <b-img
-                        :src="bot.current_tab_image"
+                        :src="`/api/v1/bots/image/${bot.id}`"
                         alt="Image"
                         width="160"
                         height="90"

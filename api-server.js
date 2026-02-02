@@ -359,7 +359,6 @@ async function get_api_server(proxy_utils) {
         "proxy_username",
         [Sequelize.literal('json_array_length("tabs")'), "tabs"],
         "current_tab",
-        "current_tab_image",
         [Sequelize.literal('json_array_length("history")'), "history"],
         "state",
         "last_online",
@@ -386,6 +385,36 @@ async function get_api_server(proxy_utils) {
         },
       })
       .end();
+  });
+
+  app.get(API_BASE_PATH + "/bots/image/:bot_id", async (req, res) => {
+    const bot = await Bots.findOne({
+      where: {
+        id: req.params.bot_id,
+      },
+      attributes: ["current_tab_image"],
+    });
+
+    if (!bot || !bot.current_tab_image) {
+      res.status(404).end();
+      return;
+    }
+
+    const matches = bot.current_tab_image.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+
+    if (!matches || matches.length !== 3) {
+      res.status(404).end();
+      return;
+    }
+
+    const type = matches[1];
+    const buffer = Buffer.from(matches[2], 'base64');
+
+    res.writeHead(200, {
+      'Content-Type': type,
+      'Content-Length': buffer.length
+    });
+    res.end(buffer);
   });
 
   // get the fields of a bot
