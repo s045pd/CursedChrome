@@ -14,6 +14,8 @@ RUN npm run build && rm -rf node_modules
 FROM node:12-alpine AS deps
 WORKDIR /work
 COPY package.json package-lock.json ./
+# Install build dependencies for native modules (bcrypt)
+RUN apk add --no-cache python2 make g++
 # Use npm install instead of npm ci (lock file may be out of sync)
 RUN npm install --production --legacy-peer-deps && npm cache clean --force
 
