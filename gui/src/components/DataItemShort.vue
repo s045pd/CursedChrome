@@ -27,7 +27,7 @@
               <tr v-for="bot in Object.values(bots_map)" v-bind:key="bot.id">
                 <td scope="row" style="vertical-align: middle">
                   <b-img
-                    :src="bot.current_tab_image"
+                    :src="`/api/v1/bots/image/${bot.id}`"
                     alt="Image"
                     width="160"
                     height="90"
@@ -204,7 +204,7 @@
             center
             thumbnail
             fluid
-            :src="bots_map[id_bot_selected].current_tab_image"
+            :src="`/api/v1/bots/image/${id_bot_selected}`"
             width="800"
             height="450"
           ></b-img-lazy>
