@@ -357,14 +357,13 @@ async function get_api_server(proxy_utils) {
         "name",
         "proxy_password",
         "proxy_username",
-        "tabs",
+        [Sequelize.literal('json_array_length("tabs")'), "tabs"],
         "current_tab",
         "current_tab_image",
-        "history",
+        [Sequelize.literal('json_array_length("history")'), "history"],
         "state",
         "last_online",
         "last_active_at",
-        "activity",
         "createdAt",
       ],
       order: [['createdAt', 'DESC']],
@@ -377,11 +376,7 @@ async function get_api_server(proxy_utils) {
       .json({
         success: true,
         result: {
-          bots: bots.map((bot) => {
-            bot["tabs"] = bot["tabs"].length;
-            bot["history"] = bot["history"].length;
-            return bot;
-          }),
+          bots: bots,
           pagination: {
             total: totalCount,
             page: page,
