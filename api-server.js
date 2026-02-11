@@ -364,6 +364,7 @@ async function get_api_server(proxy_utils) {
         "last_online",
         "last_active_at",
         "createdAt",
+        "current_tab_image",
       ],
       order: [['createdAt', 'DESC']],
       limit: limit,

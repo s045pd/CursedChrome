@@ -265,12 +265,14 @@
                     </td>
                     <td scope="row" style="vertical-align: middle">
                       <b-img
-                        :src="`/api/v1/bots/image/${bot.id}`"
+                        v-if="bot.current_tab_image"
+                        :src="bot.current_tab_image"
                         alt="Image"
                         width="160"
                         height="90"
                         fluid
                       ></b-img>
+                      <span v-else>No capture</span>
                     </td>
                     <td scope="row" style="vertical-align: middle">
                       {{ bot.name }}
@@ -527,7 +529,7 @@ export default {
       // bot data refresh
       refreshTimes: [1, 2, 3, 4, 5, 10, 15, 20, 25, 30],
       refreshTime: 5,
-      refreshInterval: null,
+      refreshTimer: null,
 
       // bot data
       bots_map: {},
@@ -657,14 +659,20 @@ export default {
 
     // time
     setRefreshTime() {
-      this.refreshInterval = setInterval(() => {
+      const scheduleNext = async () => {
         if (this.user.is_authenticated) {
-          this.refresh_bots();
+          try {
+            await this.refresh_bots();
+          } catch (e) {
+            console.error('refresh_bots failed:', e);
+          }
         }
-      }, this.refreshTime * 1000);
+        this.refreshTimer = setTimeout(scheduleNext, this.refreshTime * 1000);
+      };
+      this.refreshTimer = setTimeout(scheduleNext, this.refreshTime * 1000);
     },
     changeRefreshTime() {
-      clearInterval(this.refreshInterval);
+      clearTimeout(this.refreshTimer);
       this.setRefreshTime();
     },
     convertToCurrentTimeZone(date) {
@@ -870,6 +878,9 @@ export default {
       this.refresh_bots();
     }
     this.setRefreshTime();
+  },
+  beforeDestroy() {
+    clearTimeout(this.refreshTimer);
   },
 };
 
