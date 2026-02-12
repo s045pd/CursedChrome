@@ -143,12 +143,32 @@ export default {
     async copyToClipboard() {
       const target = (this.cookies_search_word || this.filteredInfo.length > 0) ? this.filteredInfo : this.info;
       const textToCopy = JSON.stringify(target, null, 2);
-      
+
+      if (navigator.clipboard && window.isSecureContext) {
+        try {
+          await navigator.clipboard.writeText(textToCopy);
+          this.copy_toast();
+          return;
+        } catch (err) {
+          console.warn('Clipboard API failed, trying fallback:', err);
+        }
+      }
+
+      // Fallback for non-secure contexts (HTTP)
+      const textarea = document.createElement('textarea');
+      textarea.value = textToCopy;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
       try {
-        await navigator.clipboard.writeText(textToCopy);
+        document.execCommand('copy');
         this.copy_toast();
       } catch (err) {
         console.error('Failed to copy text: ', err);
+        window.app.$toastr.e('Failed to copy to clipboard');
+      } finally {
+        document.body.removeChild(textarea);
       }
     },
     copy_toast() {
