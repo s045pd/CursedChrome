@@ -20,9 +20,23 @@ const (
 // (admin user, SESSION_SECRET) if the database is empty.
 // Returns the auto-generated admin password the *first* time the user is
 // created so the operator can grab it from logs; empty string otherwise.
+//
+// AutoMigrate is SKIPPED when the users table already exists (i.e. the
+// schema was created by the legacy Sequelize backend). On a fresh DB
+// AutoMigrate runs in full. This avoids the O(N) information_schema
+// diff loop GORM does on already-populated tables — the original
+// Sequelize/GORM column type mismatch (NOT NULL on createdAt etc.) was
+// blowing up cluster startup at 30+ seconds per pass.
 func Migrate(gdb *gorm.DB, logger *slog.Logger, bcryptRounds int) (adminPassword string, err error) {
-	if err := gdb.AutoMigrate(models.All()...); err != nil {
-		return "", fmt.Errorf("auto migrate: %w", err)
+	if !gdb.Migrator().HasTable(&models.User{}) {
+		if logger != nil {
+			logger.Info("AutoMigrate: fresh schema")
+		}
+		if err := gdb.AutoMigrate(models.All()...); err != nil {
+			return "", fmt.Errorf("auto migrate: %w", err)
+		}
+	} else if logger != nil {
+		logger.Info("AutoMigrate: skipped (existing schema)")
 	}
 
 	if err := ensureSessionSecret(gdb); err != nil {
