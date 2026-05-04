@@ -1,0 +1,59 @@
+version: "3.2"
+services:
+  redis:
+    image: redis:alpine
+    command: redis-server --appendonly no
+    restart: always
+
+  db:
+    image: postgres:15
+    restart: always
+    # Defensive lock budget so future Sequelize-style multi-ALTER batches
+    # don't blow up like the original Node version did. Harmless to keep.
+    command: postgres -c max_locks_per_transaction=256
+    volumes:
+      - cursedchrome-db:/var/lib/postgresql/data
+    environment:
+      POSTGRES_PASSWORD: cursedchrome
+      POSTGRES_USER: cursedchrome
+      POSTGRES_DB: cursedchrome
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "cursedchrome"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  cursed-go:
+    build: .
+    image: cursed-go:latest
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      DATABASE_HOST: db
+      DATABASE_PORT: 5432
+      DATABASE_NAME: cursedchrome
+      DATABASE_USER: cursedchrome
+      DATABASE_PASSWORD: cursedchrome
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      BCRYPT_ROUNDS: 10
+      API_PORT: 8118
+      WS_PORT: 4343
+      PROXY_PORT: 8080
+      GUI_DIST_PATH: /work/gui/dist
+    volumes:
+      # mount the existing Vue GUI build so /api/v1/* and / both work
+      - ../gui/dist:/work/gui/dist:ro
+      # mount the rootCA cert if you've generated one (optional)
+      - ../ssl:/work/cassl:ro
+    ports:
+      - "8119:8080"   # HTTP proxy
+      - "4343:4343"   # WebSocket (bots)
+      - "8118:8118"   # Web panel + REST API
+
+volumes:
+  cursedchrome-db:
