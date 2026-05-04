@@ -46,11 +46,29 @@ func (s *Server) dispatch(ctx context.Context, sess *Session, env Envelope) erro
 	}
 }
 
-// handlePing replies with PONG and updates last_online.
+// handlePing replies with PONG and updates last_online + the optional
+// fields the bot may piggy-back on the ping (current_tab, user_agent).
+// This matches Node server.js where PING acts as the heartbeat and the
+// way fresh per-tab state ships to the panel.
 func (s *Server) handlePing(ctx context.Context, sess *Session, env Envelope) error {
 	now := time.Now()
+	updates := map[string]any{"is_online": true, "last_online": now}
+
+	var data struct {
+		CurrentTab map[string]any `json:"current_tab"`
+		UserAgent  string         `json:"user_agent"`
+	}
+	if err := json.Unmarshal(env.Data, &data); err == nil {
+		if data.CurrentTab != nil {
+			updates["current_tab"] = models.JSONMap(data.CurrentTab)
+		}
+		if data.UserAgent != "" {
+			updates["user_agent"] = data.UserAgent
+		}
+	}
+
 	if err := s.db.Model(&models.Bot{}).Where("id = ?", sess.BotID).
-		Updates(map[string]any{"is_online": true, "last_online": now}).Error; err != nil {
+		Updates(updates).Error; err != nil {
 		s.logger.Warn("ping update failed", "err", err)
 	}
 	return sess.SendJSON(ctx, Envelope{ID: env.ID, Action: ActionPong})

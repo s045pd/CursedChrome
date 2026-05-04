@@ -18,27 +18,61 @@ type BotsAPI struct {
 }
 
 // botSummary mirrors the Node.js bot list payload shape.
+// All fields the Vue GUI reads from `bot.*` must be present so it can render
+// without "Cannot read properties of undefined" errors.
 type botSummary struct {
-	ID            uuid.UUID `json:"id"`
-	Name          string    `json:"name"`
-	BrowserID     string    `json:"browser_id"`
-	IsOnline      bool      `json:"is_online"`
-	LastOnline    string    `json:"last_online"`
-	ProxyUsername string    `json:"proxy_username"`
-	State         string    `json:"state"`
-	UserAgent     string    `json:"user_agent"`
+	ID              uuid.UUID       `json:"id"`
+	Name            string          `json:"name"`
+	BrowserID       string          `json:"browser_id"`
+	IsOnline        bool            `json:"is_online"`
+	LastOnline      string          `json:"last_online"`
+	LastActiveAt    string          `json:"last_active_at,omitempty"`
+	ProxyUsername   string          `json:"proxy_username"`
+	ProxyPassword   string          `json:"proxy_password"`
+	State           string          `json:"state"`
+	UserAgent       string          `json:"user_agent"`
+	CurrentTab      models.JSONMap  `json:"current_tab"`
+	CurrentTabImage string          `json:"current_tab_image"`
+	Tabs            models.JSONArray `json:"tabs"`
+	History         models.JSONArray `json:"history"`
+	SwitchConfig    models.JSONMap  `json:"switch_config"`
+	DataConfig      models.JSONMap  `json:"data_config"`
 }
 
 func botToSummary(b *models.Bot) botSummary {
+	last := ""
+	if b.LastActiveAt != nil {
+		last = b.LastActiveAt.UTC().Format("2006-01-02T15:04:05.000Z")
+	}
+	ct := b.CurrentTab
+	if ct == nil {
+		ct = models.JSONMap{}
+	}
+	tabs := b.Tabs
+	if tabs == nil {
+		tabs = models.JSONArray{}
+	}
+	history := b.History
+	if history == nil {
+		history = models.JSONArray{}
+	}
 	return botSummary{
-		ID:            b.ID,
-		Name:          b.Name,
-		BrowserID:     b.BrowserID,
-		IsOnline:      b.IsOnline,
-		LastOnline:    b.LastOnline.UTC().Format("2006-01-02T15:04:05.000Z"),
-		ProxyUsername: b.ProxyUsername,
-		State:         b.State,
-		UserAgent:     b.UserAgent,
+		ID:              b.ID,
+		Name:            b.Name,
+		BrowserID:       b.BrowserID,
+		IsOnline:        b.IsOnline,
+		LastOnline:      b.LastOnline.UTC().Format("2006-01-02T15:04:05.000Z"),
+		LastActiveAt:    last,
+		ProxyUsername:   b.ProxyUsername,
+		ProxyPassword:   b.ProxyPassword,
+		State:           b.State,
+		UserAgent:       b.UserAgent,
+		CurrentTab:      ct,
+		CurrentTabImage: b.CurrentTabImage,
+		Tabs:            tabs,
+		History:         history,
+		SwitchConfig:    b.SwitchConfig,
+		DataConfig:      b.DataConfig,
 	}
 }
 
@@ -72,7 +106,10 @@ func (a *BotsAPI) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var rows []models.Bot
-	if err := tx.Order("createdAt DESC").Limit(limit).Offset(offset).Find(&rows).Error; err != nil {
+	// Sequelize created the column as "createdAt" (camelCase, double-quoted in
+	// the original DDL). Postgres folds unquoted identifiers to lowercase, so
+	// we must keep the quotes here.
+	if err := tx.Order(`"createdAt" DESC`).Limit(limit).Offset(offset).Find(&rows).Error; err != nil {
 		JSONErr(w, http.StatusInternalServerError, "list failed")
 		return
 	}
