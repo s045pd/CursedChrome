@@ -32,12 +32,27 @@ const (
 
 // Envelope is the universal message body used over the WS link.
 // Format matches server.js: {id, version, action, data, origin_action?}.
+//
+// The extension shipped with this project uses `result` instead of
+// `data` for its RPC responses. We accept both: on unmarshal we look
+// at Data first; if empty and Result is set we fall back to that. The
+// helper Payload() makes this transparent to callers.
 type Envelope struct {
-	ID            string          `json:"id"`
-	Version       string          `json:"version,omitempty"`
-	Action        string          `json:"action"`
-	Data          json.RawMessage `json:"data,omitempty"`
-	OriginAction  string          `json:"origin_action,omitempty"`
+	ID           string          `json:"id"`
+	Version      string          `json:"version,omitempty"`
+	Action       string          `json:"action"`
+	Data         json.RawMessage `json:"data,omitempty"`
+	Result       json.RawMessage `json:"result,omitempty"`
+	OriginAction string          `json:"origin_action,omitempty"`
+}
+
+// Payload returns the response body regardless of which field name the
+// client used.
+func (e *Envelope) Payload() json.RawMessage {
+	if len(e.Data) > 0 {
+		return e.Data
+	}
+	return e.Result
 }
 
 // AuthData is the payload of an AUTH message issued by the server during

@@ -113,8 +113,9 @@ func (s *Server) CallBot(ctx context.Context, browserID, action string, data map
 		return nil, fmt.Errorf("rpc aborted")
 	}
 	out := map[string]any{}
-	if len(resp.Data) > 0 {
-		_ = json.Unmarshal(resp.Data, &out)
+	payload := resp.Payload()
+	if len(payload) > 0 {
+		_ = json.Unmarshal(payload, &out)
 	}
 	return out, nil
 }
