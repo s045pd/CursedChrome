@@ -34,17 +34,33 @@ function size(b: number | undefined): string {
     <template #default="{ row }">
       <div class="px-3 py-2 hover:bg-bg-hover/60">
         <div class="flex items-baseline gap-2">
-          <span class="text-[12px] truncate flex-1">
+          <a
+            v-if="asD(row).url"
+            :href="asD(row).url"
+            target="_blank"
+            rel="noopener"
+            class="text-[12px] truncate flex-1 hover:text-accent"
+            :title="asD(row).url"
+          >
             {{ asD(row).filename || asD(row).url }}
+          </a>
+          <span v-else class="text-[12px] truncate flex-1">
+            {{ asD(row).filename || '—' }}
           </span>
           <span class="chip">{{ asD(row).state || 'unknown' }}</span>
           <span class="mono text-[10px] text-fg-faint">
             {{ size(asD(row).bytesReceived) }}
           </span>
         </div>
-        <div v-if="asD(row).url" class="text-[10px] text-fg-faint mono truncate">
+        <a
+          v-if="asD(row).url"
+          :href="asD(row).url"
+          target="_blank"
+          rel="noopener"
+          class="text-[10px] text-fg-faint mono truncate block hover:text-accent"
+        >
           {{ asD(row).url }}
-        </div>
+        </a>
       </div>
     </template>
   </JsonList>
