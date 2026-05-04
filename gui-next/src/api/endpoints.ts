@@ -90,6 +90,7 @@ export const media = {
     api.get<ScreenshotEntry[]>(
       `/api/v1/screenshots${qs({ id: botId, limit, offset })}`,
     ),
+  screenshotImageURL: (id: string) => `/api/v1/screenshots/${id}/image`,
   keyboardLogs: (
     botId: string,
     limit = 50,

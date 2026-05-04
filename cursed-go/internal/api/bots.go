@@ -1,9 +1,11 @@
 package api
 
 import (
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -40,7 +42,7 @@ type botSummary struct {
 	State           string         `json:"state"`
 	UserAgent       string         `json:"user_agent"`
 	CurrentTab      models.JSONMap `json:"current_tab"`
-	CurrentTabImage string         `json:"current_tab_image"`
+	CurrentTabImage bool           `json:"current_tab_image"`
 	Tabs            int            `json:"tabs"`
 	History         int            `json:"history"`
 	SwitchConfig    models.JSONMap `json:"switch_config"`
@@ -69,7 +71,7 @@ func botToSummary(b *models.Bot) botSummary {
 		State:           b.State,
 		UserAgent:       b.UserAgent,
 		CurrentTab:      ct,
-		CurrentTabImage: b.CurrentTabImage,
+		CurrentTabImage: b.CurrentTabImage != "",
 		Tabs:            len(b.Tabs),
 		History:         len(b.History),
 		SwitchConfig:    b.SwitchConfig,
@@ -271,8 +273,32 @@ func (a *BotsAPI) Image(w http.ResponseWriter, r *http.Request) {
 		JSONErr(w, http.StatusInternalServerError, "lookup failed")
 		return
 	}
-	w.Header().Set("Content-Type", "image/jpeg")
-	_, _ = w.Write([]byte(b.CurrentTabImage))
+	img := b.CurrentTabImage
+	if img == "" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// The extension stores data URLs: "data:image/jpeg;base64,<payload>"
+	// Strip the prefix and decode the base64 payload.
+	ct := "image/jpeg"
+	payload := img
+	if idx := strings.Index(img, ";base64,"); idx != -1 {
+		prefix := img[:idx]
+		ct = strings.TrimPrefix(prefix, "data:")
+		payload = img[idx+len(";base64,"):]
+	}
+
+	raw, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		// Fallback: write as-is (might be raw binary already)
+		w.Header().Set("Content-Type", ct)
+		_, _ = w.Write([]byte(img))
+		return
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(raw)
 }
 
 // Field is GET /api/v1/fields?field=<name>&id=<bot_id>

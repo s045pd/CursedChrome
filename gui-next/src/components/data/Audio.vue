@@ -11,8 +11,11 @@ const sessions = ref<AudioSession[]>([])
 const loading = ref(false)
 const playing = ref<string | null>(null)
 const recording = ref(false)
+const audioLoading = ref(false)
+const fallbackUrl = ref<string | null>(null)
 let wave: WaveSurfer | null = null
 const waveContainer = ref<HTMLElement | null>(null)
+const fallbackAudio = ref<HTMLAudioElement | null>(null)
 
 async function load(): Promise<void> {
   loading.value = true
@@ -27,12 +30,24 @@ watch(() => props.botId, load, { immediate: true })
 function disposeWave(): void {
   wave?.destroy()
   wave = null
+  fallbackUrl.value = null
 }
 
 async function play(s: AudioSession): Promise<void> {
+  if (playing.value === s.session_id) {
+    if (wave) wave.playPause()
+    else fallbackAudio.value?.pause()
+    playing.value = null
+    return
+  }
+
   if (!waveContainer.value) return
   disposeWave()
   playing.value = s.session_id
+  audioLoading.value = true
+  fallbackUrl.value = null
+  const url = media.audioSessionURL(s.session_id)
+
   wave = WaveSurfer.create({
     container: waveContainer.value,
     waveColor: 'oklch(45% 0.012 240)',
@@ -41,11 +56,20 @@ async function play(s: AudioSession): Promise<void> {
     height: 64,
     barWidth: 2,
     barRadius: 1,
-    url: media.audioSessionURL(s.session_id),
+    url,
   })
-  wave.on('ready', () => wave?.play())
+  wave.on('ready', () => {
+    audioLoading.value = false
+    wave?.play()
+  })
   wave.on('finish', () => {
     playing.value = null
+  })
+  wave.on('error', () => {
+    disposeWave()
+    audioLoading.value = false
+    fallbackUrl.value = url
+    playing.value = s.session_id
   })
 }
 
@@ -91,7 +115,24 @@ onBeforeUnmount(disposeWave)
       <Btn size="sm" variant="ghost" :loading="loading" @click="load">Reload</Btn>
     </div>
 
-    <div ref="waveContainer" class="surface px-3 py-3 min-h-[80px]" />
+    <div class="surface px-3 py-3 min-h-[80px] relative">
+      <div ref="waveContainer" />
+      <div v-if="audioLoading" class="absolute inset-0 grid place-items-center text-[11px] text-fg-faint">
+        Loading audio…
+      </div>
+      <div v-else-if="!playing && !fallbackUrl" class="absolute inset-0 grid place-items-center text-[11px] text-fg-faint">
+        Select a session to play
+      </div>
+      <audio
+        v-if="fallbackUrl"
+        ref="fallbackAudio"
+        :src="fallbackUrl"
+        controls
+        autoplay
+        class="w-full mt-1"
+        @ended="playing = null; fallbackUrl = null"
+      />
+    </div>
 
     <div class="surface divide-y divide-border-subtle">
       <div

@@ -75,6 +75,7 @@ func NewRouter(d Deps) http.Handler {
 
 			// media
 			r.Get("/api/v1/screenshots", mediaAPI.Screenshots)
+			r.Get("/api/v1/screenshots/{id}/image", mediaAPI.ScreenshotImage)
 			r.Get("/api/v1/keyboard-logs", mediaAPI.KeyboardLogs)
 			r.Get("/api/v1/recordings", mediaAPI.Recordings)
 			r.Get("/api/v1/audio-sessions", mediaAPI.AudioSessions)

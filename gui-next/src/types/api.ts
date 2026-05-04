@@ -21,7 +21,7 @@ export interface BotSummary {
   state: string
   user_agent: string
   current_tab: { id?: number; url?: string; title?: string } | null
-  current_tab_image: string
+  current_tab_image: boolean
   tabs: number
   history: number
   switch_config: Record<string, unknown>
@@ -86,7 +86,7 @@ export interface ScreenshotEntry {
   BotID: string
   URL?: string
   Title?: string
-  ImageData: string
+  ImageData?: string
   Timestamp: string
   SessionID?: string
   Difference?: number

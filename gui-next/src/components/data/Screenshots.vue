@@ -11,6 +11,10 @@ const loading = ref(false)
 const lightbox = ref<ScreenshotEntry | null>(null)
 const limit = ref(60)
 
+function imgURL(s: ScreenshotEntry): string {
+  return s.ImageData || media.screenshotImageURL(s.ID)
+}
+
 async function load(): Promise<void> {
   loading.value = true
   try {
@@ -68,7 +72,7 @@ const grouped = computed(() => {
           @click="lightbox = s"
         >
           <img
-            :src="s.ImageData"
+            :src="imgURL(s)"
             :alt="s.Title || ''"
             loading="lazy"
             class="w-full h-full object-cover transition-transform group-hover:scale-[1.02]"
@@ -96,7 +100,7 @@ const grouped = computed(() => {
       >
         <div class="max-w-[1200px] w-full" @click.stop>
           <img
-            :src="lightbox.ImageData"
+            :src="imgURL(lightbox)"
             :alt="lightbox.Title || ''"
             class="w-full h-auto rounded-md border border-border-subtle"
           />

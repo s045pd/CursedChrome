@@ -43,11 +43,11 @@ const buckets = computed(() => {
   return { arr, start, cellMs }
 })
 
-function maxIntensity(): number {
+const maxIntensity = computed(() => {
   let m = 0
   for (const v of buckets.value.arr) if (v > m) m = v
   return m
-}
+})
 
 function color(v: number, max: number): string {
   if (v <= 0) return 'oklch(28% 0.01 240)'
@@ -93,7 +93,7 @@ function tooltip(i: number): string {
           v-for="(v, i) in buckets.arr"
           :key="i"
           class="rounded-sm"
-          :style="{ background: color(v, maxIntensity()) }"
+          :style="{ background: color(v, maxIntensity) }"
           :title="tooltip(i)"
         />
       </div>
