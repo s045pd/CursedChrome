@@ -53,7 +53,10 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
 ls -lh deploy/cursed-server
 
 step "2/8 pack tar ..."
-( cd deploy && tar -cf "$TAR" Dockerfile cursed-server )
+# Refresh GUI bundle so the image contains the latest dist.
+rm -rf deploy/gui-dist
+cp -R ../gui/dist deploy/gui-dist
+( cd deploy && tar -cf "$TAR" Dockerfile cursed-server gui-dist )
 ls -lh "$TAR"
 
 step "3/8 POST /api/auth ..."

