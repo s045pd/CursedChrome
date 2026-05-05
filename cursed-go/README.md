@@ -1,10 +1,6 @@
 # cursed-go
 
-Go rewrite of the CursedChrome Node.js backend (server.js + api-server.js + database.js).
-
-## Status
-
-Production-ready. Deployed as drop-in replacement for the Node.js backend.
+Go backend for CursedChrome. Single binary replacing the original Node.js server.
 
 ## Requirements
 
@@ -12,7 +8,7 @@ Production-ready. Deployed as drop-in replacement for the Node.js backend.
 - PostgreSQL 14+
 - Redis 6+
 
-## Quick start
+## Quick Start
 
 ```bash
 cp .env.example .env
@@ -20,7 +16,7 @@ make build
 ./bin/cursed-server
 ```
 
-Smoke check:
+Smoke check (no DB required):
 
 ```bash
 make smoke
@@ -31,14 +27,14 @@ make smoke
 ```
 cmd/cursed-server  entry point
 internal/config    env loading
-internal/db        models + migrations
+internal/db        GORM models + migrations
 internal/auth      bcrypt, sessions, middleware
-internal/api       REST routes (chi)
+internal/api       REST routes (chi) + extension packaging
 internal/ws        WebSocket server + RPC handlers
 internal/proxy     HTTP forward proxy
-internal/busx      Redis pub/sub bus
+internal/busx      Redis pub/sub bus (multi-instance)
 internal/utils     shared helpers
-test/              integration & smoke
+test/              integration tests
 ```
 
 ## Commands
@@ -52,3 +48,12 @@ test/              integration & smoke
 | `make lint` | `golangci-lint` (if installed) |
 | `make smoke` | Start binary, hit /health, /version |
 | `make tidy` | `go mod tidy` |
+
+## Tests
+
+Unit tests under each package (sqlite in-memory, no Docker needed). Integration test under `test/integration/` exercises login, WebSocket handshake, ping/pong, and proxy forwarding.
+
+```bash
+make test          # ~3s
+make test-race     # ~10s
+```
