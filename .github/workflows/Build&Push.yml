@@ -7,28 +7,67 @@ on:
   workflow_dispatch:
 
 jobs:
-  docker:
+  build:
     runs-on: ubuntu-latest
     steps:
-      -
-        name: Checkout
-        uses: actions/checkout@v3
-      -
-        name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-      -
-        name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-      -
-        name: Login to Docker Hub
-        uses: docker/login-action@v2
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: cursed-go/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: gui-next/package-lock.json
+
+      - name: Build Vue 3 frontend
+        run: |
+          cd gui-next
+          npm ci
+          npm run build
+
+      - name: Build Go binary
+        run: |
+          cd cursed-go
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+            -trimpath -ldflags="-s -w" \
+            -o ../cursed-server ./cmd/cursed-server
+
+      - name: Run tests
+        run: |
+          cd cursed-go
+          go test ./...
+
+      - name: Prepare Docker context
+        run: |
+          mkdir -p docker-ctx/extensions
+          cp cursed-server docker-ctx/
+          cp -r gui/dist docker-ctx/gui-dist
+          cp -r extension docker-ctx/extensions/main
+          [ -d cookie-sync-extension ] && cp -r cookie-sync-extension docker-ctx/extensions/cookie-sync
+          [ -d embed-targets ] && for d in embed-targets/*/; do
+            [ -f "$d/manifest.json" ] && cp -r "$d" "docker-ctx/extensions/$(basename "$d")"
+          done
+          cp Dockerfile docker-ctx/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      -
-        name: Build and push
-        uses: docker/build-push-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
         with:
-          context: .
+          context: docker-ctx
           push: true
           tags: s045pd/cursed_chrome:latest

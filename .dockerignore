@@ -1,54 +1,34 @@
-# Git
 .git
 .gitignore
-
-# Node modules
-node_modules
-gui-next/node_modules
-
-# Old GUI (built fresh in Docker)
-gui/
-
-# IDE
+.github
 .vscode
-.idea
-*.swp
-*.swo
+.claude
+.chrome-data
 
-# Development/temp files
+node_modules/
+gui-next/node_modules/
+gui/node_modules/
+
+# Extensions (packaged at deploy time, not at docker build)
+extension/
+cookie-sync-extension/
+embed-targets/
+external_extension/
+bypass-paywalls-chrome/
+
+# Go build artifacts
+cursed-go/bin/
+cursed-go/deploy/
+
+# Development files
+*.md
+!gui-next/README.md
+images/
+scripts/
+ssl/
+dist/
 *.log
 *.sqlite
 .env
 .env.*
-tmp/
-.tmp/
-*.tmp
 .DS_Store
-
-# Extensions (not needed for server)
-extension/
-cookie-sync-extension/
-external_extension/
-bypass-paywalls-chrome/
-
-# Old Node.js backend (obsolete)
-anyproxy/
-utils.js
-api-server.js
-server.js
-database.js
-docker-entrypoint.sh
-package.json
-package-lock.json
-
-# Go test cache / build cache
-cursed-go/tmp/
-
-# Deploy helpers
-cursed-go/deploy/
-
-# Docs/images
-images/
-docs/
-*.md
-!gui-next/README.md

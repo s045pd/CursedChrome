@@ -1,2 +1,0 @@
-deb http://mirrors.aliyun.com/debian/ buster main non-free contrib
-deb-src http://mirrors.aliyun.com/debian/ buster main non-free contrib

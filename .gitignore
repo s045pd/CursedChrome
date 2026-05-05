@@ -1,18 +1,32 @@
-node_modules/*
-node_modules
+node_modules/
 .DS_Store
 *.key
 *.crt
-*.env
-dev.sh
-extension_ga/
-extension_ga.zip
-bypass-paywalls-chrome
-.github
-bypass-paywalls-chrome/*
-bypass-paywalls-chrome.zip
-bypass-paywalls-chrome-with-core.zip
-.chrome-data/
-external_extension/
-scripts/install_bypass_paywalls.bat
+.env
+.env.*
+
+# Build outputs
+gui/dist/
 dist/
+
+# Chrome test data
+.chrome-data/
+
+# External extensions (local copies)
+external_extension/
+bypass-paywalls-chrome/
+bypass-paywalls-chrome.zip
+
+# IDE
+.idea/
+.vscode/
+
+# Go build artifacts
+cursed-go/bin/
+cursed-go/cursed-server
+cursed-go/deploy/cursed-server
+cursed-go/deploy/gui-dist/
+cursed-go/deploy/extensions/
+*.test
+*.out
+coverage.txt

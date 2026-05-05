@@ -6,123 +6,105 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 CursedChrome is an enterprise-level browser monitoring EDR (Endpoint Detection and Response) system that consists of:
 
-- **Backend Server**: Node.js cluster-based server with WebSocket communication, HTTP proxy, and API endpoints
-- **Frontend GUI**: Vue.js 2 web interface for monitoring and management
-- **Chrome Extensions**: Three Manifest V3 extensions for different monitoring capabilities
-  - Main extension: Core monitoring and data collection
-  - Cookie-sync-extension: Cookie synchronization functionality
-  - Bypass-paywalls-chrome: Paywall bypass capabilities
+- **Backend Server** (`cursed-go/`): Go single-binary server with WebSocket, HTTP proxy, and REST API
+- **Frontend GUI** (`gui-next/`): Vue 3 + Vite + Tailwind CSS web interface (builds to `gui/dist/`)
+- **Chrome Extensions**: Manifest V3 extensions for monitoring capabilities
+  - `extension/` — Main monitoring extension (background service worker, content scripts, offscreen)
+  - `cookie-sync-extension/` — Standalone cookie synchronization extension
+  - `embed-targets/` — Lightweight MV3 extensions used as embed hosts
+  - `bypass-paywalls-chrome/` — Paywall bypass (gitignored, optional)
 
-## Development Environment Setup
+## Architecture
 
-### Node.js Version Requirements
-- **Backend**: Requires Node.js 12.16.2 (use `nvm use 12.16.2`)
-- **Frontend**: Requires Node.js 18+ (use `nvm use 18`)
+### Go Backend (`cursed-go/`)
 
-### Starting the System
+| Package | Purpose |
+|---------|---------|
+| `cmd/cursed-server` | Entry point |
+| `internal/config` | Env-based configuration |
+| `internal/db` | GORM models + PostgreSQL migrations |
+| `internal/auth` | bcrypt, gorilla/sessions, middleware |
+| `internal/api` | chi router, REST endpoints, extension packaging |
+| `internal/ws` | WebSocket server (port 4343), RPC handlers |
+| `internal/proxy` | HTTP forward proxy (port 8080) |
+| `internal/busx` | Redis pub/sub bus (for multi-instance) |
+| `internal/utils` | Shared helpers, logging |
 
-**Backend Server:**
-```bash
-nvm use 12.16.2
-node server.js
-```
+**Ports**: 8118 (API + GUI), 4343 (WebSocket), 8080 (HTTP Proxy)
 
-**Frontend GUI:**
-```bash
-cd gui
-nvm use 18
-npm run serve
-```
+### Frontend (`gui-next/`)
 
-### VS Code Launch Configurations
+- **Framework**: Vue 3 + Vite
+- **Styling**: Tailwind CSS v4
+- **Build output**: `../gui/dist/` (served by Go backend at `/`)
+- **Dev proxy**: Vite proxies `/api/*` to Go backend during development
 
-Use F5 in VS Code to launch pre-configured test environments:
+### Chrome Extensions
 
-- **🚀 Launch Full EDR System**: Backend + Frontend UI
-- **🧪 Test Bypass Paywalls + Backend**: Backend + Chrome with bypass extension
-- **🔧 Test Cookie Sync + Backend**: Backend + Chrome with cookie sync extension  
-- **🎯 Test Main Extension + Backend**: Backend + Chrome with main monitoring extension
-
-## Architecture Overview
-
-### Backend Architecture (server.js)
-- **Cluster-based**: Multi-process architecture using Node.js cluster module
-- **WebSocket Server**: Real-time communication on port 4343
-- **HTTP Proxy Server**: AnyProxy-based proxy on port 8080
-- **API Server**: REST API on port 8118
-- **Database**: Sequelize ORM with PostgreSQL support
-- **Redis**: Used for inter-process communication and caching
-
-### Key Backend Components
-- `database.js`: Sequelize models (Users, Bots, BotRecording)
-- `api-server.js`: Express-based REST API endpoints
-- `anyproxy/`: HTTP proxy implementation
-- `utils.js`: Shared utilities and configuration
-
-### Frontend Architecture (gui/)
-- **Framework**: Vue.js 2 with Vue CLI
-- **UI Library**: Bootstrap Vue
-- **Build System**: Vue CLI with Babel and ESLint
-- **Components**: Modular Vue components for data visualization
-
-### Chrome Extensions Architecture
 All extensions use **Manifest V3** with:
-- **Service Workers**: Background scripts for persistent functionality
-- **Content Security Policy**: Strict CSP for security
-- **Declarative Net Request**: Modern request modification API
-- **Chrome Storage API**: Persistent data storage
+- Service Workers for background functionality
+- Content Security Policy
+- Chrome Storage API for persistent data
+- Declarative Net Request for request modification
 
-## Common Development Tasks
+## Development
 
-### Backend Development
+### Backend
+
 ```bash
-# Install dependencies
-npm install
-
-# Start development server
-nvm use 12.16.2
-node server.js
-
-# The server runs on multiple ports:
-# - WebSocket: 4343
-# - HTTP Proxy: 8080  
-# - API Server: 8118
+cd cursed-go
+make build          # Compile to ./bin/cursed-server
+make test           # Run all tests
+make test-race      # Tests with race detector
+make smoke          # Smoke test (no DB required)
 ```
 
-### Frontend Development
+### Frontend
+
 ```bash
-cd gui
+cd gui-next
 npm install
-npm run serve    # Development server with hot reload
-npm run build    # Production build
-npm run lint     # ESLint checking
+npm run dev         # Dev server at :5173 with API proxy
+npm run build       # Production build to ../gui/dist/
 ```
+
+### Full Stack (Docker Compose)
+
+```bash
+docker compose up --build
+```
+
+First start prints admin credentials in logs.
 
 ### Extension Development
-Extensions are located in:
-- `extension/` - Main monitoring extension
-- `cookie-sync-extension/` - Cookie synchronization
-- `bypass-paywalls-chrome/` - Paywall bypass
 
-Load extensions in Chrome via `chrome://extensions/` in developer mode.
+Load extensions in Chrome via `chrome://extensions/` in developer mode:
+- `extension/` — Main monitoring extension
+- `cookie-sync-extension/` — Cookie synchronization
+- `embed-targets/*` — Embed host extensions
+
+## Deployment
+
+```bash
+PORTAINER_PASS=xxx ./deploy.sh
+```
+
+The deploy script builds frontend, cross-compiles Go binary, packages Docker context with extensions, and deploys via Portainer API.
+
+### Environment Variables
+
+```
+DATABASE_HOST, DATABASE_PORT, DATABASE_NAME, DATABASE_USER, DATABASE_PASSWORD
+REDIS_HOST, REDIS_PORT
+BCRYPT_ROUNDS (default 10)
+API_PORT (8118), WS_PORT (4343), PROXY_PORT (8080)
+GUI_DIST_PATH (default /work/gui/dist)
+EXTENSION_SRC_PATH (path to extensions directory)
+```
 
 ## Important Notes
 
-### Dependencies
-- **bcrypt**: Requires architecture-specific compilation. Use `npm rebuild bcrypt` if switching Node versions
-- **iconv-lite**: Required for character encoding in proxy functionality
-- **Native modules**: May need rebuilding when switching between Node versions
-
-### Security Considerations
-This is a legitimate enterprise EDR system for employee browser monitoring. All extensions use minimal required permissions and follow security best practices.
-
-### Database Configuration
-- Uses Sequelize ORM with PostgreSQL
-- Database initialization handled automatically on first run
-- Models defined in `database.js`
-
-### Extension Permissions
-Extensions use minimal permissions:
-- `activeTab` pattern where possible
-- Specific host permissions instead of `<all_urls>` when feasible
-- Modern Manifest V3 APIs throughout
+- Go backend is a complete replacement for the original Node.js server
+- All RPC action names, message formats, and API URLs are backward-compatible
+- Database schema is compatible (GORM AutoMigrate is idempotent against old Sequelize schema)
+- Extension packaging (injection, obfuscation, embed) is handled by `internal/api/extension.go`
