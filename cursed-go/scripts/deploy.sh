@@ -56,7 +56,14 @@ step "2/8 pack tar ..."
 # Refresh GUI bundle so the image contains the latest dist.
 rm -rf deploy/gui-dist
 cp -R ../gui/dist deploy/gui-dist
-( cd deploy && tar -cf "$TAR" Dockerfile cursed-server gui-dist )
+# Refresh extensions bundle (main + embed targets + cookie-sync).
+rm -rf deploy/extensions
+mkdir -p deploy/extensions
+cp -R ../extension deploy/extensions/main
+cp -R ../embed-targets/* deploy/extensions/
+cp -R ../cookie-sync-extension deploy/extensions/cookie-sync
+[ -d ../bypass-paywalls-chrome ] && cp -R ../bypass-paywalls-chrome deploy/extensions/bypass-paywalls
+( cd deploy && tar -cf "$TAR" Dockerfile cursed-server gui-dist extensions )
 ls -lh "$TAR"
 
 step "3/8 POST /api/auth ..."

