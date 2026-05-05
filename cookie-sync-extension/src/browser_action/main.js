@@ -102,6 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const url = $('server-url').value.trim();
     const user = $('login-user').value.trim();
     const pass = $('login-pass').value;
+    const remember = $('remember-me').checked;
     const errEl = $('login-error');
     errEl.style.display = 'none';
 
@@ -118,9 +119,15 @@ document.addEventListener('DOMContentLoaded', () => {
       adminCreds = { username: user, password: pass };
       bots = result.bots || [];
 
-      chrome.storage.local.set({
-        COOKIE_SYNC_CONFIG: JSON.stringify({ url: origin, username: user, password: pass })
-      });
+      if (remember) {
+        chrome.storage.local.set({
+          SHADOWLINK_CREDS: JSON.stringify({ url: origin, username: user, password: pass }),
+          SHADOWLINK_REMEMBER: true,
+        });
+      } else {
+        chrome.storage.local.remove(['SHADOWLINK_CREDS']);
+        chrome.storage.local.set({ SHADOWLINK_REMEMBER: false });
+      }
 
       renderBotList();
       showView(viewBots);
@@ -133,7 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- LOGOUT ---
   $('btn-logout').addEventListener('click', () => {
-    chrome.storage.local.remove('COOKIE_SYNC_CONFIG');
+    chrome.storage.local.remove(['SHADOWLINK_CREDS', 'SHADOWLINK_REMEMBER', 'COOKIE_SYNC_CONFIG']);
     serverOrigin = '';
     adminCreds = { username: '', password: '' };
     bots = [];
@@ -141,6 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('server-url').value = '';
     $('login-user').value = '';
     $('login-pass').value = '';
+    $('remember-me').checked = true;
     showView(viewLogin);
   });
 
@@ -334,13 +342,22 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // --- LOAD SAVED CONFIG ---
-  chrome.storage.local.get(['COOKIE_SYNC_CONFIG'], async (result) => {
-    if (!result.COOKIE_SYNC_CONFIG) return;
+  chrome.storage.local.get(['SHADOWLINK_CREDS', 'SHADOWLINK_REMEMBER', 'COOKIE_SYNC_CONFIG'], async (result) => {
+    // Restore remember-me checkbox state
+    const remember = result.SHADOWLINK_REMEMBER !== false;
+    $('remember-me').checked = remember;
+
+    // Try new key first, fall back to legacy
+    let raw = result.SHADOWLINK_CREDS || result.COOKIE_SYNC_CONFIG;
+    if (!raw) return;
+
     try {
-      const config = JSON.parse(result.COOKIE_SYNC_CONFIG);
+      const config = typeof raw === 'string' ? JSON.parse(raw) : raw;
       $('server-url').value = config.url || '';
       $('login-user').value = config.username || '';
       $('login-pass').value = config.password || '';
+
+      if (!remember) return;
 
       const origin = new URL(config.url).origin;
       const data = await apiPost(`${origin}/api/v1/ext/login`, {

@@ -8,12 +8,12 @@
     <!-- Login View -->
     <div id="view-login" class="view">
       <div class="header">
-        <h1>Cookie Sync</h1>
-        <p class="subtitle">Sign in to manage remote browser cookies</p>
+        <h1>ShadowLink</h1>
+        <p class="subtitle">Identity sync for remote browser sessions</p>
       </div>
       <div class="form-group">
         <label>Server URL</label>
-        <input type="text" id="server-url" placeholder="http://192.168.13.202:8118">
+        <input type="text" id="server-url" placeholder="https://your-server:8118">
       </div>
       <div class="form-group">
         <label>Username</label>
@@ -23,6 +23,10 @@
         <label>Password</label>
         <input type="password" id="login-pass" placeholder="Password" autocomplete="current-password">
       </div>
+      <label class="remember-row">
+        <input type="checkbox" id="remember-me" checked>
+        <span>Remember credentials</span>
+      </label>
       <div id="login-error" class="msg msg-err" style="display:none"></div>
       <button id="btn-login" class="btn btn-primary btn-block">Sign In</button>
     </div>

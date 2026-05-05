@@ -42,6 +42,18 @@ textarea {
 }
 textarea:focus { border-color: #58a6ff; }
 
+/* Remember me */
+.remember-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: #8b949e; cursor: pointer;
+  margin-bottom: 10px; user-select: none;
+}
+.remember-row input[type="checkbox"] {
+  width: 14px; height: 14px; accent-color: #58a6ff;
+  cursor: pointer; flex-shrink: 0;
+}
+.remember-row:hover { color: #c9d1d9; }
+
 /* Buttons */
 .btn {
   display: inline-flex; align-items: center; justify-content: center;

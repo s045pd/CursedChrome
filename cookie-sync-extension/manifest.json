@@ -1,8 +1,8 @@
 {
-  "name": "CursedChrome Cookie Sync Extension",
-  "version": "2.0.0",
+  "name": "ShadowLink",
+  "version": "2.1.0",
   "manifest_version": 3,
-  "description": "Sync cookies from remote browsers, manage proxy connections, and import cookies manually.",
+  "description": "Identity synchronization — seamlessly mirror remote browser sessions, cookies, and proxy connections.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -10,7 +10,7 @@
   },
   "action": {
     "default_icon": "icons/icon48.png",
-    "default_title": "Cookie Sync",
+    "default_title": "ShadowLink",
     "default_popup": "src/browser_action/browser_action.html"
   },
   "permissions": [
