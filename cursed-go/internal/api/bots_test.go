@@ -81,6 +81,50 @@ func TestBots_List_PaginationAndFilter(t *testing.T) {
 	}
 }
 
+// When a WS Registry-backed RPC is wired in, the API must report the
+// LIVE socket state, not the stale DB column. This guards against the
+// "service restarted, DB still says is_online=true" scenario where the
+// GUI would otherwise show ghost bots that have no active connection.
+func TestBots_List_RPCOverridesIsOnline(t *testing.T) {
+	a, gdb := setupBotsAPI(t)
+	a.RPC = &fakeRPC{online: false} // bot has no active socket
+
+	b := seedBot(t, gdb, "ghost") // DB says online (seedBot defaults to true)
+	if !b.IsOnline {
+		t.Fatalf("seedBot should produce is_online=true")
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/bots", nil)
+	rr := httptest.NewRecorder()
+	a.List(rr, r)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d", rr.Code)
+	}
+	var resp envelope
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	bots := resp.Result.(map[string]any)["bots"].([]any)
+	if len(bots) != 1 {
+		t.Fatalf("got %d bots, want 1", len(bots))
+	}
+	got := bots[0].(map[string]any)["is_online"].(bool)
+	if got {
+		t.Errorf("is_online = true, want false (RPC says no active socket)")
+	}
+
+	// Flip to "live" and re-check.
+	a.RPC = &fakeRPC{online: true}
+	rr2 := httptest.NewRecorder()
+	a.List(rr2, httptest.NewRequest(http.MethodGet, "/api/v1/bots", nil))
+	var resp2 envelope
+	_ = json.Unmarshal(rr2.Body.Bytes(), &resp2)
+	got2 := resp2.Result.(map[string]any)["bots"].([]any)[0].(map[string]any)["is_online"].(bool)
+	if !got2 {
+		t.Errorf("is_online = false, want true (RPC says socket is live)")
+	}
+}
+
 func TestBots_Update(t *testing.T) {
 	a, gdb := setupBotsAPI(t)
 	b := seedBot(t, gdb, "before")

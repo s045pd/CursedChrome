@@ -153,6 +153,14 @@ class CursedChromeClient {
       try {
         const parsedMessage = JSON.parse(event.data);
 
+        // PONG is the server's reply to our PING heartbeat. The timestamp
+        // bump above is the only thing we need from it — don't dispatch
+        // it through RPC_CALL_TABLE, otherwise we echo it back and the
+        // server logs an "unknown action" warning every cycle.
+        if (parsedMessage.action === "PONG") {
+          return;
+        }
+
         // Update configuration if provided
         try {
           if (parsedMessage.data.switch_config) {

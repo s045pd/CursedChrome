@@ -101,6 +101,63 @@ func TestWS_AuthAndPing(t *testing.T) {
 	}
 }
 
+// Old extensions echo the server's PONG back as if it were an RPC.
+// Dispatch must absorb that without erroring or warning.
+func TestWS_PongEchoIsSilentlyAbsorbed(t *testing.T) {
+	gdb := newWSDB(t)
+	srv := New(gdb, utils.NewLogger())
+	url, stop := runServer(t, srv)
+	defer stop()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+
+	// AUTH handshake
+	_, msg, _ := conn.Read(ctx)
+	var probe Envelope
+	_ = json.Unmarshal(msg, &probe)
+	browserID := uuid.NewString()
+	authData, _ := json.Marshal(AuthData{BrowserID: browserID})
+	b, _ := json.Marshal(Envelope{ID: probe.ID, Action: ActionAuth, Data: authData, OriginAction: ActionAuth})
+	conn.Write(ctx, websocket.MessageText, b)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for srv.Registry().ByBrowserID(browserID) == nil && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if srv.Registry().ByBrowserID(browserID) == nil {
+		t.Fatal("bot not registered")
+	}
+
+	// Send a stray PONG (as a buggy old client would). Dispatch must
+	// not return an error and the session must stay open afterwards.
+	pongEnv, _ := json.Marshal(Envelope{ID: "pong-1", Action: ActionPong})
+	if err := conn.Write(ctx, websocket.MessageText, pongEnv); err != nil {
+		t.Fatal(err)
+	}
+
+	// Follow up with a real PING — if the PONG had killed the session
+	// this read would error.
+	pingEnv, _ := json.Marshal(Envelope{ID: "ping-1", Action: ActionPing})
+	if err := conn.Write(ctx, websocket.MessageText, pingEnv); err != nil {
+		t.Fatal(err)
+	}
+	_, pongRaw, err := conn.Read(ctx)
+	if err != nil {
+		t.Fatalf("session dropped after PONG echo: %v", err)
+	}
+	var pong Envelope
+	_ = json.Unmarshal(pongRaw, &pong)
+	if pong.Action != ActionPong {
+		t.Errorf("expected PONG reply to PING, got %s", pong.Action)
+	}
+}
+
 func TestWS_KeyboardLogPersists(t *testing.T) {
 	gdb := newWSDB(t)
 	srv := New(gdb, utils.NewLogger())

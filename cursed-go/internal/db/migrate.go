@@ -105,6 +105,21 @@ func ensureAdminUser(gdb *gorm.DB, bcryptRounds int) (string, error) {
 	return plain, nil
 }
 
+// ResetBotOnlineState clears is_online on every bot row.
+// Call once at startup so non-graceful shutdowns (kill -9, container OOM,
+// docker stop --time=0) don't leave stale "online" rows that the API would
+// then echo back to the GUI even though no websocket session exists.
+// The WS handshake (upsertBot/handlePing) re-flips it to true the moment a
+// real bot reconnects, so this is safe to run unconditionally.
+func ResetBotOnlineState(gdb *gorm.DB) (int64, error) {
+	res := gdb.Model(&models.Bot{}).Where("is_online = ?", true).
+		Update("is_online", false)
+	if res.Error != nil {
+		return 0, fmt.Errorf("reset bot online state: %w", res.Error)
+	}
+	return res.RowsAffected, nil
+}
+
 // GetSessionSecret returns the SESSION_SECRET value from settings table.
 // Returns ErrSettingMissing if not seeded yet.
 var ErrSettingMissing = errors.New("setting missing")

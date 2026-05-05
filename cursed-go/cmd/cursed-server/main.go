@@ -54,6 +54,11 @@ func main() {
 			logger.Error("db migrate failed", "err", err)
 			os.Exit(1)
 		}
+		if cleared, err := db.ResetBotOnlineState(gdb); err != nil {
+			logger.Warn("reset bot online state failed", "err", err)
+		} else if cleared > 0 {
+			logger.Info("reset stale online flags", "bots", cleared)
+		}
 		secret, err := db.GetSetting(gdb, db.SettingSessionSecret)
 		if err != nil {
 			logger.Error("session secret missing", "err", err)

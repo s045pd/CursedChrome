@@ -108,6 +108,55 @@ func TestGetSetting_Missing(t *testing.T) {
 	}
 }
 
+func TestResetBotOnlineState_FlipsTrueRowsOnly(t *testing.T) {
+	gdb := openTestDB(t)
+	if err := gdb.AutoMigrate(&models.Bot{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Two "online" rows survived from a previous run + one already-offline row.
+	// The Bot model's is_online column defaults to true and GORM omits Go
+	// zero-values from INSERTs, so we have to explicitly force the offline
+	// row to false via Update after Create.
+	rows := []models.Bot{
+		{BrowserID: "online-1", Name: "a", ProxyUsername: "u1", ProxyPassword: "p", IsOnline: true},
+		{BrowserID: "online-2", Name: "b", ProxyUsername: "u2", ProxyPassword: "p", IsOnline: true},
+		{BrowserID: "offline-1", Name: "c", ProxyUsername: "u3", ProxyPassword: "p"},
+	}
+	for i := range rows {
+		if err := gdb.Create(&rows[i]).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := gdb.Model(&models.Bot{}).Where("browser_id = ?", "offline-1").
+		Update("is_online", false).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	cleared, err := ResetBotOnlineState(gdb)
+	if err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	if cleared != 2 {
+		t.Errorf("cleared = %d, want 2", cleared)
+	}
+
+	var stillOnline int64
+	gdb.Model(&models.Bot{}).Where("is_online = ?", true).Count(&stillOnline)
+	if stillOnline != 0 {
+		t.Errorf("rows still online after reset = %d, want 0", stillOnline)
+	}
+
+	// Idempotent: calling twice is a no-op.
+	cleared2, err := ResetBotOnlineState(gdb)
+	if err != nil {
+		t.Fatalf("reset 2nd time: %v", err)
+	}
+	if cleared2 != 0 {
+		t.Errorf("second reset cleared = %d, want 0", cleared2)
+	}
+}
+
 func TestUser_BeforeCreate_GeneratesUUID(t *testing.T) {
 	gdb := openTestDB(t)
 	if err := gdb.AutoMigrate(&models.User{}); err != nil {
