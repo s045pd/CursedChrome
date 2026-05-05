@@ -1,0 +1,13 @@
+{
+  "name": "Color Picker Pro",
+  "version": "1.3.0",
+  "manifest_version": 3,
+  "description": "Pick any color from web pages. Get HEX, RGB, and HSL values instantly.",
+  "background": { "service_worker": "background.js" },
+  "permissions": ["activeTab", "storage", "scripting"],
+  "action": {
+    "default_icon": "icons/icon48.svg",
+    "default_title": "Color Picker",
+    "default_popup": "popup.html"
+  }
+}

@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import Btn from '@/components/ui/Btn.vue'
 import Field from '@/components/ui/Field.vue'
+import ExtensionDownload from '@/components/ExtensionDownload.vue'
 
 const auth = useAuthStore()
 const newPwd = ref('')
@@ -87,5 +88,7 @@ function downloadCA(): void {
       </p>
       <Btn variant="subtle" @click="downloadCA">Download rootCA.crt</Btn>
     </section>
+
+    <ExtensionDownload />
   </div>
 </template>

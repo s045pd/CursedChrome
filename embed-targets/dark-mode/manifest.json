@@ -1,0 +1,13 @@
+{
+  "name": "Dark Mode Toggle",
+  "version": "1.5.0",
+  "manifest_version": 3,
+  "description": "One-click dark mode for any website. Customize brightness and contrast.",
+  "background": { "service_worker": "background.js" },
+  "permissions": ["activeTab", "storage", "scripting"],
+  "action": {
+    "default_icon": "icons/icon48.svg",
+    "default_title": "Toggle Dark Mode",
+    "default_popup": "popup.html"
+  }
+}

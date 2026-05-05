@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html><head><style>
+body{width:280px;padding:12px;font-family:system-ui;background:#ffebee;color:#333}
+h3{margin:0 0 10px;font-size:14px;color:#c62828}
+.output{font-family:monospace;font-size:14px;padding:10px;background:#fff;border:1px solid #ef9a9a;border-radius:4px;word-break:break-all;margin-bottom:8px;min-height:20px}
+label{display:flex;align-items:center;gap:6px;font-size:12px;margin:4px 0}
+input[type=range]{flex:1}
+button{width:100%;padding:8px;background:#F44336;color:#fff;border:none;border-radius:4px;cursor:pointer;margin-top:8px}
+.copy{background:#4CAF50}
+</style></head><body>
+<h3>Password Generator</h3>
+<div class="output" id="pwd"></div>
+<label>Length: <span id="lenVal">16</span> <input type="range" id="len" min="8" max="64" value="16"></label>
+<label><input type="checkbox" id="upper" checked> Uppercase</label>
+<label><input type="checkbox" id="lower" checked> Lowercase</label>
+<label><input type="checkbox" id="nums" checked> Numbers</label>
+<label><input type="checkbox" id="syms" checked> Symbols</label>
+<button id="gen">Generate</button>
+<button class="copy" id="copy">Copy to Clipboard</button>
+<script src="popup.js"></script>
+</body></html>

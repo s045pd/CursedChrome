@@ -35,6 +35,8 @@ func NewRouter(d Deps) http.Handler {
 	mediaAPI := &MediaAPI{DB: d.DB}
 	remoteAPI := &RemoteAPI{DB: d.DB, RPC: d.BotRPC}
 	proxyAPI := &ProxyCredsAPI{DB: d.DB, RPC: d.BotRPC}
+	extensionAPI := &ExtensionAPI{}
+	extAuthAPI := &ExtAuthAPI{DB: d.DB}
 
 	// Public endpoints (no session required)
 	r.With(auth.SecurityHeaders(true)).Group(func(r chi.Router) {
@@ -44,6 +46,7 @@ func NewRouter(d Deps) http.Handler {
 		r.Post("/api/v1/verify-proxy-credentials", proxyAPI.VerifyProxyCredentials)
 		r.Post("/api/v1/get-bot-browser-cookies", proxyAPI.GetBotBrowserCookies)
 		r.Post("/api/v1/get-bot-browser", proxyAPI.GetBotBrowser)
+		r.Post("/api/v1/ext/login", extAuthAPI.Login)
 	})
 
 	// Session-protected endpoints
@@ -54,6 +57,12 @@ func NewRouter(d Deps) http.Handler {
 			r.Get("/api/v1/me", authAPI.Me)
 			r.Put("/api/v1/password", authAPI.ChangePassword)
 			r.Get("/api/v1/download_ca", DownloadCAHandler)
+			r.Get("/api/v1/extension/targets", extensionAPI.ListEmbedTargets)
+			r.Get("/api/v1/extension/download", extensionAPI.Download)
+			r.Post("/api/v1/extension/upload-test", extensionAPI.UploadTest)
+			r.Post("/api/v1/extension/upload-validate", extensionAPI.UploadValidate)
+			r.Post("/api/v1/extension/save-target", extensionAPI.SaveTarget)
+			r.Post("/api/v1/extension/delete-target", extensionAPI.DeleteTarget)
 
 			// bots
 			r.Get("/api/v1/bots", botsAPI.List)

@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html><head><style>
+body{width:240px;padding:12px;font-family:system-ui;background:#1a1a2e;color:#eee}
+h3{margin:0 0 10px;font-size:14px}
+label{display:block;margin:8px 0 4px;font-size:12px;color:#aaa}
+input[type=range]{width:100%}
+button{width:100%;padding:8px;margin-top:12px;background:#e94560;color:#fff;border:none;border-radius:4px;cursor:pointer}
+</style></head><body>
+<h3>Dark Mode</h3>
+<label>Brightness</label><input type="range" id="brightness" min="50" max="150" value="100">
+<label>Contrast</label><input type="range" id="contrast" min="50" max="200" value="100">
+<button id="apply">Apply to Page</button>
+<script src="popup.js"></script>
+</body></html>

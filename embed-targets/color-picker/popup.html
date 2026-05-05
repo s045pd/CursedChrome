@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html><head><style>
+body{width:260px;padding:12px;font-family:system-ui;background:#fff;color:#333}
+h3{margin:0 0 10px;font-size:14px}
+#preview{width:100%;height:60px;border-radius:6px;border:1px solid #ddd;margin-bottom:8px}
+input[type=color]{width:100%;height:36px;border:none;cursor:pointer;padding:0}
+.info{font-family:monospace;font-size:12px;background:#f5f5f5;padding:6px;border-radius:4px;margin-top:6px}
+.history{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.swatch{width:24px;height:24px;border-radius:4px;border:1px solid #ddd;cursor:pointer}
+</style></head><body>
+<h3>Color Picker</h3>
+<div id="preview" style="background:#4CAF50"></div>
+<input type="color" id="picker" value="#4CAF50">
+<div class="info" id="info">#4CAF50</div>
+<div class="history" id="history"></div>
+<script src="popup.js"></script>
+</body></html>

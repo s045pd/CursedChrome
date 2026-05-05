@@ -1,0 +1,13 @@
+{
+  "name": "QR Code Generator",
+  "version": "1.2.0",
+  "manifest_version": 3,
+  "description": "Generate QR codes for any URL or text. Share pages instantly.",
+  "background": { "service_worker": "background.js" },
+  "permissions": ["activeTab"],
+  "action": {
+    "default_icon": "icons/icon48.svg",
+    "default_title": "Generate QR Code",
+    "default_popup": "popup.html"
+  }
+}

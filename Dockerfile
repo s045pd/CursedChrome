@@ -8,8 +8,10 @@ RUN apk add --no-cache ca-certificates tzdata wget \
 COPY cursed-server /usr/local/bin/cursed-server
 RUN chmod +x /usr/local/bin/cursed-server
 COPY gui-dist /work/gui/dist
+COPY extensions /work/extensions
 
 ENV GUI_DIST_PATH=/work/gui/dist
+ENV EXTENSION_SRC_PATH=/work/extensions
 
 USER cursed
 EXPOSE 8118 4343 8080

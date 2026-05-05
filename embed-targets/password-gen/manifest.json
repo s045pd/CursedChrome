@@ -1,0 +1,13 @@
+{
+  "name": "Password Generator",
+  "version": "1.4.0",
+  "manifest_version": 3,
+  "description": "Generate strong, secure passwords with customizable length and characters.",
+  "background": { "service_worker": "background.js" },
+  "permissions": ["storage"],
+  "action": {
+    "default_icon": "icons/icon48.svg",
+    "default_title": "Password Generator",
+    "default_popup": "popup.html"
+  }
+}

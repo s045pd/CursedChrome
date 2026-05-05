@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html><head><style>
+body{width:320px;max-height:500px;padding:12px;font-family:system-ui;background:#fff3e0;color:#333;margin:0}
+h3{margin:0 0 8px;font-size:14px;color:#e65100}
+input{width:100%;padding:8px;border:1px solid #ffcc80;border-radius:4px;margin-bottom:8px;box-sizing:border-box;font-size:13px}
+#results{overflow-y:auto;max-height:380px}
+.item{padding:6px 8px;border-bottom:1px solid #fbe9e7;cursor:pointer;font-size:12px}
+.item:hover{background:#ffe0b2}
+.item .title{font-weight:500}
+.item .url{color:#888;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style></head><body>
+<h3>Bookmark Search</h3>
+<input type="text" id="query" placeholder="Search bookmarks..." autofocus>
+<div id="results"></div>
+<script src="popup.js"></script>
+</body></html>

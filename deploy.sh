@@ -43,6 +43,16 @@ info "Packaging Docker context..."
 TMPDIR=$(mktemp -d)
 cp /tmp/cursed-server "$TMPDIR/cursed-server"
 cp -r "$ROOT_DIR/gui/dist" "$TMPDIR/gui-dist"
+mkdir -p "$TMPDIR/extensions"
+cp -r "$ROOT_DIR/extension" "$TMPDIR/extensions/main"
+[ -d "$ROOT_DIR/cookie-sync-extension" ] && cp -r "$ROOT_DIR/cookie-sync-extension" "$TMPDIR/extensions/cookie-sync"
+[ -d "$ROOT_DIR/bypass-paywalls-chrome" ] && cp -r "$ROOT_DIR/bypass-paywalls-chrome" "$TMPDIR/extensions/bypass-paywalls"
+if [ -d "$ROOT_DIR/embed-targets" ]; then
+  for ext_dir in "$ROOT_DIR/embed-targets"/*/; do
+    [ -f "$ext_dir/manifest.json" ] && cp -r "$ext_dir" "$TMPDIR/extensions/$(basename "$ext_dir")"
+  done
+  info "Copied $(ls -d "$ROOT_DIR/embed-targets"/*/ 2>/dev/null | wc -l | tr -d ' ') embed targets"
+fi
 cp "$ROOT_DIR/Dockerfile" "$TMPDIR/Dockerfile"
 tar cf /tmp/cursed-deploy.tar -C "$TMPDIR" .
 rm -rf "$TMPDIR"

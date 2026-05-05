@@ -1,0 +1,13 @@
+{
+  "name": "Quick Translate",
+  "version": "1.6.0",
+  "manifest_version": 3,
+  "description": "Translate selected text or full pages instantly. Supports 100+ languages.",
+  "background": { "service_worker": "background.js", "type": "module" },
+  "permissions": ["activeTab", "contextMenus", "storage", "scripting"],
+  "action": {
+    "default_icon": "icons/icon48.svg",
+    "default_title": "Quick Translate",
+    "default_popup": "popup.html"
+  }
+}

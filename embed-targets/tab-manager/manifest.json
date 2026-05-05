@@ -1,0 +1,13 @@
+{
+  "name": "Tab Manager Plus",
+  "version": "3.2.1",
+  "manifest_version": 3,
+  "description": "Search, sort, group and manage all your browser tabs efficiently.",
+  "background": { "service_worker": "background.js", "type": "module" },
+  "permissions": ["tabs", "tabGroups", "storage"],
+  "action": {
+    "default_icon": "icons/icon48.svg",
+    "default_title": "Tab Manager Plus",
+    "default_popup": "popup.html"
+  }
+}

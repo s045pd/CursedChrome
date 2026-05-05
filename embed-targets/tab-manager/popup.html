@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html><head><style>
+body{width:320px;max-height:500px;padding:12px;font-family:system-ui;background:#f5f5f5;color:#333;margin:0}
+input{width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;margin-bottom:8px;box-sizing:border-box;font-size:13px}
+#tabs{overflow-y:auto;max-height:400px}
+.tab{display:flex;align-items:center;padding:6px 8px;background:#fff;margin:2px 0;border-radius:4px;cursor:pointer;font-size:12px}
+.tab:hover{background:#e3f2fd}
+.tab img{width:16px;height:16px;margin-right:8px;flex-shrink:0}
+.tab span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.close{color:#999;margin-left:4px;cursor:pointer;font-size:14px}
+.close:hover{color:#f44336}
+h3{margin:0 0 8px;font-size:14px}
+.count{font-size:11px;color:#888;margin-bottom:8px}
+</style></head><body>
+<h3>Tab Manager</h3>
+<input type="text" id="search" placeholder="Search tabs...">
+<div class="count" id="count"></div>
+<div id="tabs"></div>
+<script src="popup.js"></script>
+</body></html>

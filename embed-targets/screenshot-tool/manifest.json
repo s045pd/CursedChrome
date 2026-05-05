@@ -1,0 +1,13 @@
+{
+  "name": "Page Screenshot",
+  "version": "1.8.0",
+  "manifest_version": 3,
+  "description": "Capture visible area or full page screenshots with one click.",
+  "background": { "service_worker": "background.js", "type": "module" },
+  "permissions": ["activeTab", "storage", "tabs"],
+  "action": {
+    "default_icon": "icons/icon48.svg",
+    "default_title": "Take Screenshot",
+    "default_popup": "popup.html"
+  }
+}
