@@ -50,13 +50,8 @@ const bot = ref<BotSummary | null>(null)
 const refreshTimer = ref<ReturnType<typeof setTimeout> | null>(null)
 
 async function refresh(): Promise<void> {
-  // Resolve via the bots list cache; if missing, fetch all.
-  let found = store.list.find((b: BotSummary) => b.id === props.id) ?? null
-  if (!found) {
-    await store.fetch()
-    found = store.list.find((b: BotSummary) => b.id === props.id) ?? null
-  }
-  bot.value = found
+  await store.fetch()
+  bot.value = store.list.find((b: BotSummary) => b.id === props.id) ?? null
 }
 
 const imageURL = computed(() => botsApi.imageURL(props.id))

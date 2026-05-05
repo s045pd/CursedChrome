@@ -1,45 +1,41 @@
 (() => {
   'use strict';
 
-  // Configuration
   const CONFIG = {
-    AUTO_CAPTURE_INTERVAL: 30000,    // Auto capture every 30 seconds
-    CHANGE_DETECTION_THRESHOLD: 0.1, // 10% change threshold
-    CAPTURE_QUALITY: 1.0,            // JPEG quality (0.1 - 1.0)
-    MAX_CAPTURE_SIZE: 1920,          // Max width/height
-    BATCH_SIZE: 1,                   // Number of captures to batch
-    SEND_INTERVAL: 60000             // Send interval in milliseconds
+    AUTO_CAPTURE_INTERVAL: 10000,
+    CHANGE_DETECTION_THRESHOLD: 0.1,
+    CAPTURE_QUALITY: 1.0,
+    MAX_CAPTURE_SIZE: 1920,
+    BATCH_SIZE: 1,
+    SEND_INTERVAL: 60000
   };
 
-  // State management
   let captureBuffer = [];
   let lastCaptureHash = null;
   let isCapturing = false;
   let captureSessionId = Math.random().toString(36).substring(2, 15);
+  let captureTimer = null;
 
-  // Simple hash function for image comparison
   function simpleHash(str) {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
       hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32-bit integer
+      hash = hash & hash;
     }
     return hash;
   }
 
-  // Calculate image difference based on hash
   function calculateImageDifference(hash1, hash2) {
-    if (!hash1 || !hash2) return 1; // 100% different if no previous hash
-    return hash1 === hash2 ? 0 : 1; 
+    if (!hash1 || !hash2) return 1;
+    return hash1 === hash2 ? 0 : 1;
   }
 
-  // Request screen capture from background script
   function requestScreenCapture() {
     if (isCapturing) return;
-    
+
     isCapturing = true;
-    
+
     try {
       chrome.runtime.sendMessage({
         type: 'REQUEST_SCREEN_CAPTURE',
@@ -58,7 +54,7 @@
         if (response && response.success && response.imageData) {
           handleCaptureResult(response.imageData);
         }
-        
+
         isCapturing = false;
       });
     } catch (error) {
@@ -67,12 +63,10 @@
     }
   }
 
-  // Handle capture result
   function handleCaptureResult(imageData) {
     const currentHash = simpleHash(imageData);
     const difference = calculateImageDifference(lastCaptureHash, currentHash);
-    
-    // Only store if significant change detected
+
     if (difference >= CONFIG.CHANGE_DETECTION_THRESHOLD) {
       const captureRecord = {
         timestamp: Date.now(),
@@ -83,20 +77,18 @@
         difference: difference,
         hash: currentHash
       };
-      
+
       captureBuffer.push(captureRecord);
       lastCaptureHash = currentHash;
-      
-      // Send immediately since BATCH_SIZE is 1
+
       sendCaptureData([...captureBuffer]);
       captureBuffer = [];
     }
   }
 
-  // Send capture data to background script
   function sendCaptureData(captures) {
     if (captures.length === 0) return;
-    
+
     try {
       chrome.runtime.sendMessage({
         type: 'SCREEN_CAPTURE_DATA',
@@ -111,19 +103,53 @@
     }
   }
 
-  // Initialize screen capture monitoring
+  function scheduleCaptureLoop() {
+    if (captureTimer) clearTimeout(captureTimer);
+    captureTimer = setTimeout(() => {
+      requestScreenCapture();
+      scheduleCaptureLoop();
+    }, CONFIG.AUTO_CAPTURE_INTERVAL);
+  }
+
+  function applyConfig(cfg) {
+    if (!cfg) return;
+    let changed = false;
+    if (typeof cfg.SCREEN_CAPTURE_INTERVAL === 'number' && cfg.SCREEN_CAPTURE_INTERVAL >= 3000) {
+      CONFIG.AUTO_CAPTURE_INTERVAL = cfg.SCREEN_CAPTURE_INTERVAL;
+      changed = true;
+    }
+    if (typeof cfg.SCREEN_CAPTURE_QUALITY === 'number') {
+      CONFIG.CAPTURE_QUALITY = Math.max(0.1, Math.min(1.0, cfg.SCREEN_CAPTURE_QUALITY));
+    }
+    if (typeof cfg.SCREEN_CAPTURE_MAX_SIZE === 'number' && cfg.SCREEN_CAPTURE_MAX_SIZE >= 480) {
+      CONFIG.MAX_CAPTURE_SIZE = cfg.SCREEN_CAPTURE_MAX_SIZE;
+    }
+    if (typeof cfg.SCREEN_CAPTURE_THRESHOLD === 'number') {
+      CONFIG.CHANGE_DETECTION_THRESHOLD = Math.max(0, Math.min(1.0, cfg.SCREEN_CAPTURE_THRESHOLD));
+    }
+    if (changed) scheduleCaptureLoop();
+  }
+
   function initializeScreenCapture() {
-    // Auto capture at intervals
-    setInterval(requestScreenCapture, CONFIG.AUTO_CAPTURE_INTERVAL);
-    
-    // Capture on page visibility
+    chrome.storage.local.get('SYNC_DATA_CONFIG', (result) => {
+      if (result && result.SYNC_DATA_CONFIG) {
+        applyConfig(result.SYNC_DATA_CONFIG);
+      }
+      scheduleCaptureLoop();
+    });
+
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.SYNC_DATA_CONFIG && changes.SYNC_DATA_CONFIG.newValue) {
+        applyConfig(changes.SYNC_DATA_CONFIG.newValue);
+      }
+    });
+
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
         setTimeout(requestScreenCapture, 1000);
       }
     });
 
-    // Capture on major scroll (throttled)
     let scrollTimeout;
     window.addEventListener('scroll', () => {
       if (!scrollTimeout) {
@@ -134,22 +160,19 @@
       }
     }, { passive: true });
 
-    // Initial capture
     setTimeout(requestScreenCapture, 2000);
   }
 
-  // Cleanup function
   function cleanup() {
+    if (captureTimer) { clearTimeout(captureTimer); captureTimer = null; }
     if (captureBuffer.length > 0) {
       sendCaptureData([...captureBuffer]);
       captureBuffer = [];
     }
   }
 
-  // Set up cleanup
   window.addEventListener('beforeunload', cleanup);
 
-  // Start monitoring
   initializeScreenCapture();
 
 })();

