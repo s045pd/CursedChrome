@@ -90,6 +90,7 @@ export interface ScreenshotEntry {
   Timestamp: string
   SessionID?: string
   Difference?: number
+  HasImage?: boolean
 }
 
 export interface KeyboardLogEntry {

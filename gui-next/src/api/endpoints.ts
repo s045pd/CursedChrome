@@ -111,5 +111,7 @@ export const media = {
   audioSessions: (botId: string) =>
     api.get<AudioSession[]>(`/api/v1/audio-sessions${qs({ id: botId })}`),
   audioSessionURL: (sessionId: string) => `/api/v1/audio-session/${sessionId}`,
+  audioSessionChunks: (sessionId: string) =>
+    api.get<{ id: string; timestamp: string }[]>(`/api/v1/audio-session/${sessionId}/chunks`),
   audioChunkURL: (id: string) => `/api/v1/audio/${id}`,
 }

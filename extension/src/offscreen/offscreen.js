@@ -15,43 +15,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 let mediaRecorder = null;
 let audioChunks = [];
 
+function sendChunk(blob, botId, sessionId) {
+  const reader = new FileReader();
+  reader.onloadend = () => {
+    const base64data = reader.result.split(',')[1];
+    chrome.runtime.sendMessage({
+      type: 'AUDIO_CHUNK',
+      data: {
+        chunk: base64data,
+        bot_id: botId,
+        session_id: sessionId
+      }
+    });
+  };
+  reader.onerror = (e) => {
+    console.error("FileReader error:", e);
+  };
+  reader.readAsDataURL(blob);
+}
+
 async function startRecording(data, sendResponse) {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream);
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : 'audio/webm';
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
     audioChunks = [];
 
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size > 0) {
-        console.log("Audio chunk available, size:", event.data.size);
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const base64data = reader.result.split(',')[1];
-          chrome.runtime.sendMessage({
-            type: 'AUDIO_CHUNK',
-            data: {
-              chunk: base64data,
-              bot_id: data.bot_id,
-              session_id: data.session_id
-            }
-          });
-        };
-        reader.onerror = (e) => {
-          console.error("FileReader error:", e);
-        };
-        reader.readAsDataURL(event.data);
+        sendChunk(event.data, data.bot_id, data.session_id);
       }
-    };
-
-    mediaRecorder.onstart = () => {
-      console.log("MediaRecorder started");
     };
 
     mediaRecorder.onerror = (event) => {
       console.error("MediaRecorder error:", event.error);
     };
 
-    mediaRecorder.start(60000); // 60-second chunks as requested
+    mediaRecorder.start(10000);
     sendResponse({ success: true });
   } catch (err) {
     console.error("Recording error:", err);
@@ -60,19 +62,22 @@ async function startRecording(data, sendResponse) {
 }
 
 function stopRecording(sendResponse) {
-  if (mediaRecorder) {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.onstop = () => {
+      mediaRecorder.stream.getTracks().forEach(track => track.stop());
+      mediaRecorder = null;
+      sendResponse({ success: true });
+    };
     mediaRecorder.stop();
-    mediaRecorder.stream.getTracks().forEach(track => track.stop());
-    mediaRecorder = null;
-    sendResponse({ success: true });
   } else {
+    mediaRecorder = null;
     sendResponse({ error: "No active recording" });
   }
 }
 
 async function handleNavigation(url, sendResponse) {
   const iframe = document.getElementById('target-frame');
-  
+
   const timeout = setTimeout(() => {
     sendResponse({ error: "Navigation timed out (Offscreen)" });
   }, 35000);
@@ -81,10 +86,8 @@ async function handleNavigation(url, sendResponse) {
     clearTimeout(timeout);
     iframe.removeEventListener('load', onLoad);
     iframe.removeEventListener('error', onError);
-    
+
     try {
-      // Access the iframe's content
-      // Note: This only works if it's the same origin or if the extension has host permissions
       const doc = iframe.contentDocument || iframe.contentWindow.document;
       sendResponse({
         html: doc.documentElement.outerHTML,

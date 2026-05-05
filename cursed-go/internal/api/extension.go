@@ -18,7 +18,7 @@ import (
 
 const (
 	defaultExtSrcPath = "/work/extensions"
-	wsPlaceholder     = `__CURSED_SERVER_URL__`
+	wsPlaceholder = `ws://127.0.0.1:4343`
 )
 
 type ExtensionAPI struct {

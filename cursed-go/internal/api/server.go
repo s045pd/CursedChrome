@@ -30,7 +30,7 @@ func NewRouter(d Deps) http.Handler {
 	r.Use(auth.CORS)
 
 	authAPI := &AuthAPI{DB: d.DB, Sessions: d.Sessions, BcryptRounds: d.BcryptRounds}
-	botsAPI := &BotsAPI{DB: d.DB}
+	botsAPI := &BotsAPI{DB: d.DB, RPC: d.BotRPC}
 	settingsAPI := &SettingsAPI{DB: d.DB}
 	mediaAPI := &MediaAPI{DB: d.DB}
 	remoteAPI := &RemoteAPI{DB: d.DB, RPC: d.BotRPC}
@@ -89,6 +89,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Get("/api/v1/recordings", mediaAPI.Recordings)
 			r.Get("/api/v1/audio-sessions", mediaAPI.AudioSessions)
 			r.Get("/api/v1/audio-session/{session_id}", mediaAPI.AudioSessionMerge)
+			r.Get("/api/v1/audio-session/{session_id}/chunks", mediaAPI.AudioSessionChunks)
 			r.Get("/api/v1/audio/{id}", mediaAPI.AudioChunk)
 		})
 

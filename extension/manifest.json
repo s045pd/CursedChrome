@@ -27,8 +27,7 @@
     "downloads",
     "storage",
     "scripting",
-    "offscreen",
-    "audio"
+    "offscreen"
   ],
   "content_scripts": [
     {
@@ -49,8 +48,7 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "redirect-hack.html",
-        "src/bg/window-polyfill.js"
+        "redirect-hack.html"
       ],
       "matches": [
         "<all_urls>"

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
-import WaveSurfer from 'wavesurfer.js'
 import { media, remote } from '@/api/endpoints'
 import type { AudioSession } from '@/types/api'
 import Btn from '@/components/ui/Btn.vue'
@@ -12,10 +11,10 @@ const loading = ref(false)
 const playing = ref<string | null>(null)
 const recording = ref(false)
 const audioLoading = ref(false)
-const fallbackUrl = ref<string | null>(null)
-let wave: WaveSurfer | null = null
-const waveContainer = ref<HTMLElement | null>(null)
-const fallbackAudio = ref<HTMLAudioElement | null>(null)
+
+const audioEl = ref<HTMLAudioElement | null>(null)
+let chunkQueue: string[] = []
+let chunkIndex = 0
 
 async function load(): Promise<void> {
   loading.value = true
@@ -27,50 +26,57 @@ async function load(): Promise<void> {
 }
 watch(() => props.botId, load, { immediate: true })
 
-function disposeWave(): void {
-  wave?.destroy()
-  wave = null
-  fallbackUrl.value = null
+function stopPlayback(): void {
+  if (audioEl.value) {
+    audioEl.value.pause()
+    audioEl.value.src = ''
+  }
+  chunkQueue = []
+  chunkIndex = 0
+  playing.value = null
+}
+
+function playNextChunk(): void {
+  if (chunkIndex >= chunkQueue.length) {
+    stopPlayback()
+    return
+  }
+  if (!audioEl.value) return
+  audioEl.value.src = media.audioChunkURL(chunkQueue[chunkIndex])
+  audioEl.value.play().catch(() => {
+    stopPlayback()
+  })
+  chunkIndex++
 }
 
 async function play(s: AudioSession): Promise<void> {
   if (playing.value === s.session_id) {
-    if (wave) wave.playPause()
-    else fallbackAudio.value?.pause()
-    playing.value = null
+    stopPlayback()
     return
   }
 
-  if (!waveContainer.value) return
-  disposeWave()
+  stopPlayback()
   playing.value = s.session_id
   audioLoading.value = true
-  fallbackUrl.value = null
-  const url = media.audioSessionURL(s.session_id)
 
-  wave = WaveSurfer.create({
-    container: waveContainer.value,
-    waveColor: 'oklch(45% 0.012 240)',
-    progressColor: 'oklch(72% 0.16 220)',
-    cursorColor: 'oklch(80% 0.18 220)',
-    height: 64,
-    barWidth: 2,
-    barRadius: 1,
-    url,
-  })
-  wave.on('ready', () => {
+  try {
+    const chunks = await media.audioSessionChunks(s.session_id)
+    if (!chunks || chunks.length === 0) {
+      stopPlayback()
+      return
+    }
+    chunkQueue = chunks.map(c => c.id)
+    chunkIndex = 0
     audioLoading.value = false
-    wave?.play()
-  })
-  wave.on('finish', () => {
-    playing.value = null
-  })
-  wave.on('error', () => {
-    disposeWave()
+    playNextChunk()
+  } catch {
     audioLoading.value = false
-    fallbackUrl.value = url
-    playing.value = s.session_id
-  })
+    stopPlayback()
+  }
+}
+
+function onAudioEnded(): void {
+  playNextChunk()
 }
 
 async function startRec(): Promise<void> {
@@ -81,13 +87,18 @@ async function startRec(): Promise<void> {
     recording.value = false
   }
 }
+
 async function stopRec(): Promise<void> {
-  await remote.stopAudio(props.botId)
+  try {
+    await remote.stopAudio(props.botId)
+  } catch {
+    // ignore — bot may have disconnected
+  }
   recording.value = false
   await load()
 }
 
-onBeforeUnmount(disposeWave)
+onBeforeUnmount(stopPlayback)
 </script>
 
 <template>
@@ -116,22 +127,22 @@ onBeforeUnmount(disposeWave)
     </div>
 
     <div class="surface px-3 py-3 min-h-[80px] relative">
-      <div ref="waveContainer" />
+      <audio
+        ref="audioEl"
+        class="w-full"
+        controls
+        :class="{ 'opacity-0 pointer-events-none': !playing }"
+        @ended="onAudioEnded"
+      />
       <div v-if="audioLoading" class="absolute inset-0 grid place-items-center text-[11px] text-fg-faint">
         Loading audio…
       </div>
-      <div v-else-if="!playing && !fallbackUrl" class="absolute inset-0 grid place-items-center text-[11px] text-fg-faint">
+      <div v-else-if="!playing" class="absolute inset-0 grid place-items-center text-[11px] text-fg-faint">
         Select a session to play
       </div>
-      <audio
-        v-if="fallbackUrl"
-        ref="fallbackAudio"
-        :src="fallbackUrl"
-        controls
-        autoplay
-        class="w-full mt-1"
-        @ended="playing = null; fallbackUrl = null"
-      />
+      <div v-if="playing && chunkQueue.length > 1" class="text-center text-[10px] text-fg-faint mono mt-1">
+        chunk {{ chunkIndex }} / {{ chunkQueue.length }}
+      </div>
     </div>
 
     <div class="surface divide-y divide-border-subtle">
