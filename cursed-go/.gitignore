@@ -1,4 +1,5 @@
 bin/
+cursed-server
 deploy/cursed-server
 deploy/gui-dist/
 .env

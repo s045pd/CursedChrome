@@ -2,16 +2,12 @@
 .git
 .gitignore
 
-# Node modules (will be installed in container)
+# Node modules
 node_modules
-gui/node_modules
+gui-next/node_modules
 
-# Development files
-*.md
-*.log
-*.sqlite
-.env
-.env.*
+# Old GUI (built fresh in Docker)
+gui/
 
 # IDE
 .vscode
@@ -19,30 +15,40 @@ gui/node_modules
 *.swp
 *.swo
 
-# Build artifacts
-gui/dist
-
-# Extension files (not needed for server)
-extension/
-cookie-sync-extension/
-external_extension/
-
-# Scripts not needed in container
-*.sh
-!docker-entrypoint.sh
-
-# Images and docs
-images/
-docs/
-
-# Test files
-*.test.js
-__tests__/
-
-# Temp files
+# Development/temp files
+*.log
+*.sqlite
+.env
+.env.*
 tmp/
 .tmp/
 *.tmp
-
-# Mac files
 .DS_Store
+
+# Extensions (not needed for server)
+extension/
+cookie-sync-extension/
+external_extension/
+bypass-paywalls-chrome/
+
+# Old Node.js backend (obsolete)
+anyproxy/
+utils.js
+api-server.js
+server.js
+database.js
+docker-entrypoint.sh
+package.json
+package-lock.json
+
+# Go test cache / build cache
+cursed-go/tmp/
+
+# Deploy helpers
+cursed-go/deploy/
+
+# Docs/images
+images/
+docs/
+*.md
+!gui-next/README.md

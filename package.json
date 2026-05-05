@@ -34,7 +34,6 @@
     "iconv-lite": "^0.4.24",
     "inquirer": "^5.2.0",
     "ip": "^0.3.2",
-    "javascript-obfuscator": "^5.1.0",
     "jimp": "^0.16.1",
     "juicer": "^0.6.6-stable",
     "mime-types": "2.1.11",
@@ -65,5 +64,8 @@
     "url": "https://github.com/s045pd/CursedChrome/issues"
   },
   "homepage": "https://github.com/s045pd/CursedChrome#readme",
-  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e",
+  "devDependencies": {
+    "javascript-obfuscator": "^5.4.2"
+  }
 }
