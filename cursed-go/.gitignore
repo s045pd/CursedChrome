@@ -2,6 +2,7 @@ bin/
 cursed-server
 deploy/cursed-server
 deploy/gui-dist/
+deploy/extensions/
 .env
 .env.deploy
 *.test
@@ -9,3 +10,4 @@ deploy/gui-dist/
 coverage.txt
 .idea/
 .vscode/
+.DS_Store

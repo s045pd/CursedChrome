@@ -4,7 +4,7 @@ Go rewrite of the CursedChrome Node.js backend (server.js + api-server.js + data
 
 ## Status
 
-Active rewrite. See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for stage progress.
+Production-ready. Deployed as drop-in replacement for the Node.js backend.
 
 ## Requirements
 
