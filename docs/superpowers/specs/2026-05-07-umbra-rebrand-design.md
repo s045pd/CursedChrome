@@ -2,24 +2,27 @@
 
 **Date**: 2026-05-07
 **Author**: brainstorming session
-**Status**: approved, ready for implementation plan
-**Scope**: full rebrand of the project currently named "CursedChrome" to "Umbra", including new visual identity, GUI design system adoption, and source/deployment renames.
+**Status**: approved (revised), ready for implementation plan
+**Scope**: fork the project currently named "CursedChrome" into a brand-new standalone repository "Umbra", sanitize all private data and operator-specific artifacts, apply the new visual identity and design system, and publish as a public open-source project at `s045pd/umbra-edr` on GitHub. The original `s045pd/CursedChrome` repo is left private and untouched.
 
 ---
 
 ## 1. Goal
 
-Eliminate every "cursed" / "CursedChrome" trace from the project across four surface layers (display strings, source identifiers, deployment defaults, asset files), establish a coherent new brand identity called **Umbra**, and adopt the design system that emerged from the brand exploration into the existing `gui-next/` frontend.
+Produce a sanitized, rebranded, open-source-ready fork of CursedChrome at a new sibling directory and publish it as `s045pd/umbra-edr` on GitHub. The fork establishes the **Umbra** identity (name, icon, design system, defensive EDR positioning) and removes every private-data trace from the original repo — credentials, local paths, browser profile data, third-party redistribution risks, and offensive-tone language.
 
-The motivation is brand cleanliness: the project has matured into an enterprise-grade browser-layer EDR, and the original "cursed" framing (voodoo doll iconography, edgy hacker tone) no longer fits. The rebrand establishes a serious, sophisticated identity suitable for the product's actual positioning.
+The motivation is two-fold: (1) the project has matured into an enterprise-grade browser-layer EDR and deserves a clean public release, and (2) the "cursed" framing with voodoo iconography and "implant" language reads as offensive tooling, which mismatches the actual EDR positioning and is unsuitable for public release.
 
 ## 2. Non-goals
 
-- Renaming the running production PostgreSQL database. The default values in source code change to `umbra`, but the deployed instance keeps using its existing `cursedchrome` database via `DATABASE_NAME=cursedchrome` in the production `.env`. Renaming the live database is a separate maintenance task outside this spec.
-- Re-doing the architecture diagram (`cursedchrome-diagram.png`). The old asset is deleted in this rebrand; recreating the diagram in the new visual style is a follow-up.
-- Backwards-compatibility shims for the Go module path. This is a private project with no external importers, so the import path change is a hard cutover.
-- Bypass-paywalls extension and the 12 host extensions under `embed-targets/` are not touched — they predate Umbra and have their own identities.
-- The `ShadowLink` cookie-sync extension keeps its name (it was renamed in commit `e6c3cf1` and is treated as a sibling sub-brand under the Umbra umbrella). Its icon will reuse the Umbra mark for now; a dedicated ShadowLink mark is a later iteration.
+- **Modifying the original `s045pd/CursedChrome` repo.** It stays private and untouched. This spec is exclusively about producing a new sibling fork.
+- **Migrating production deployments.** Operators of the original CursedChrome instance continue to run that codebase; no automatic migration tooling is provided.
+- **Preserving git history.** The new fork starts with a fresh git history (history of the original repo may contain private references; safer to start clean). The first commit on the new fork is "initial Umbra release".
+- **Re-doing the architecture diagram (`cursedchrome-diagram.png`).** The old asset is deleted in the fork; recreating the diagram in the new visual style is a follow-up.
+- **Including the `bypass-paywalls-chrome/` directory.** This is third-party code with redistribution license uncertainty. The fork excludes it; the new README documents how operators can bring their own copy at install time if desired.
+- **Backwards compatibility for the Go module path.** Hard cutover.
+- **The 12 host extensions under `embed-targets/`** keep their existing identities (they predate the rebrand and exist as embed hosts, not user-facing product surfaces).
+- **The `ShadowLink` cookie-sync extension** keeps its name (renamed earlier in commit `e6c3cf1`, treated as a sibling sub-brand under the Umbra umbrella). Its icon reuses the Umbra mark for now; a dedicated ShadowLink mark is a later iteration.
 
 ## 3. Brand foundation
 
@@ -136,105 +139,169 @@ Tooling for the import-path rewrite: `gofmt -w` plus a sed pass over `import` bl
 
 ## 5. Execution plan
 
-Three sequential pull requests, each independently verifiable and revertable.
+Five sequential phases executed locally first, then published to GitHub once the operator has reviewed the sanitized fork. The fork lives at `/Users/s045pd/workobj/BackupData/DocumentArchive/GitHub/umbra-edr/` (sibling of the existing `CursedChrome/` directory). The original repo is not touched.
 
-### 5.1 PR ① — `feat: rebrand display layer to Umbra`
+The work uses the `opensource-pipeline` skill / agents (`opensource-forker`, `opensource-sanitizer`, `opensource-packager`) where they apply.
 
-Layer 1 + Layer 4 only.
+### 5.1 Phase 1 — Fork & exclude
 
-Changes:
+Copy source files from CursedChrome to the new sibling directory, with a hard exclusion list.
 
-- All user-visible strings in source code, README files, manifests, popups, MITM cert subjects.
-- Promote the topdown SVG to `images/umbra.svg`, render PNGs at 16 / 48 / 128 / 512 from the master.
-- Replace `extension/icons/*` and `cookie-sync-extension/icons/*` with new renders.
-- Delete obsolete assets (`doll.svg`, old diagram, side-view SVG, Stitch exploration folder).
-- Apply the new design tokens to `gui-next/`: update Tailwind config, global CSS variables, font imports (Space Grotesk).
-- Touch only token values, not class names or component structure.
+Excluded (must NOT be copied):
 
-Verification:
-
-- `cd gui-next && npm run build` succeeds.
-- Loading `gui/dist/` in a browser shows the new favicon, login page wordmark, and main shell branding.
-- Loading `extension/` and `cookie-sync-extension/` unpacked in `chrome://extensions/` shows new icons at 16/48/128 and the new manifest description.
-- `cd cursed-go && make build && make test` still passes (no Go changes).
-- Stack runs end-to-end with no behavior regression.
-
-### 5.2 PR ② — `refactor: rename Go module cursed-go → umbra`
-
-Layer 2 only.
-
-Changes:
-
-- `git mv cursed-go umbra-server`.
-- `go.mod` module path → `github.com/s045pd/umbra`.
-- Bulk import rewrite: 30+ files, mechanical `s/cursed-go/umbra/g` on import blocks, verified by `go build ./...`.
-- Build target rename: `cursed-server` → `umbra-server` in `Makefile`, `Dockerfile`, `deploy/Dockerfile`, `scripts/*.sh`, `.vscode/launch.json`.
-- Cookie name prefix: `cursed_*` → `umbra_*` in `internal/api/extension.go:264,271`.
-- Test files: import paths synced.
+- `.env` and any other dotfile containing operator secrets
+- `.chrome-data/` (operator's local browser profile)
+- `.git/` (fresh history starts on the fork)
+- `bypass-paywalls-chrome/` (third-party redistribution risk)
+- `ssl/` (operator's certs; replaced with `.gitignore`d placeholder + a regen script)
+- `cursed-go/tools/node_modules/` and any other vendored node_modules
+- `cursed-go/extensions/` (build output)
+- `gui/dist/` (build output, regenerated at install)
+- `images/cursedchrome-diagram.png`, `images/cursed-chrome-web-panel.png`, `images/doll.svg` (rebrand)
+- `images/umbra-icon-sideview.svg`, `images/umbra-stitch/` (rebrand exploration artifacts)
+- macOS `.DS_Store` files
 
 Verification:
 
-- `cd umbra-server && make build` produces `bin/umbra-server`.
-- `make test` and `make test-race` all pass.
-- `make smoke` succeeds (no DB required).
-- `cd gui-next && npm run dev` proxied to a running `umbra-server` performs end-to-end login + bot list.
+- `du -sh` of fork is meaningfully smaller than original (third-party + node_modules + chrome-data dropped).
+- `find` confirms none of the excluded patterns exist in the fork.
 
-### 5.3 PR ③ — `chore: update deployment defaults to umbra`
+### 5.2 Phase 2 — Apply rebrand
 
-Layer 3 only.
+Apply the rename inventory from §4 to the fork (NOT to the original).
 
-Changes:
+Changes mechanically applied:
 
-- `umbra-server/internal/config/config.go` default values updated.
-- `docker-compose.yaml` service / container / volume / network names.
-- Top-level `Dockerfile` image labels.
-- `deploy.sh` Portainer stack name.
-- `.env.example` example values updated.
-- Production `.env` is not touched (operator-managed; existing deployments keep their `DATABASE_NAME=cursedchrome` and `DATABASE_USER=cursedchrome` overrides).
+- Layer 1 display strings (§4.1): all human-visible text references changed to Umbra.
+- Layer 2 source identifiers (§4.2): directory `cursed-go/` → `umbra-server/`, Go module path, binary name, cookie prefix, all 30+ imports.
+- Layer 3 deployment defaults (§4.3): config defaults, docker-compose names, image tag, deploy stack name. `DATABASE_PASSWORD` requires explicit env var (no default).
+- Layer 4 assets (§4.4): new Umbra SVG promoted to `images/umbra.svg`, PNGs rendered at 16/48/128/512, extension icons replaced.
+- GUI design tokens (§3.3) applied to `gui-next/` Tailwind config + global CSS.
+- `extension/manifest.json` description rewritten in defensive EDR language (no "implant", no "inject/disguise").
 
 Verification:
 
-- In a clean environment, `docker compose up --build` brings up a stack named `umbra` with `umbra_pgdata` volume and `umbra` database.
-- An existing deployment, after pulling the new image, continues to work with its existing `.env` overrides pointing at the legacy DB name.
+- `cd umbra-edr/umbra-server && make build && make test` passes.
+- `cd umbra-edr/gui-next && npm install && npm run build` passes.
+- Loading `umbra-edr/extension/` and `umbra-edr/cookie-sync-extension/` unpacked in Chrome shows new icons + Umbra branding.
 
-### 5.4 Sequencing and rollback
+### 5.3 Phase 3 — Sanitize
 
-- Merge PRs in numeric order. Operator may observe each for a chosen interval before merging the next.
-- Each PR is independently `git revert`-safe; downstream PRs do not block reverting an earlier one because they touch disjoint files.
-- After all three merge: rename the GitHub repository from `s045pd/CursedChrome` to `s045pd/umbra` via repo settings. GitHub auto-redirects HTTP traffic and `git remote` URLs.
+Run `opensource-sanitizer` (or its checks manually) over the fork. Block release on any FAIL.
 
-### 5.5 Risk register
+Patterns scanned:
+
+- Hardcoded credentials (passwords, API keys, tokens) — must produce 0 hits.
+- Operator's local paths (`/Users/s045pd/...`) in source/docs — replaced with relative paths or `~/...`.
+- Operator's email (`s045pd.x@gmail.com`) — replaced with placeholder or removed.
+- Operator's GitHub username (`s045pd`) in code/docs — kept ONLY in `LICENSE` copyright line and the GitHub repo URL itself; removed from import paths if any leak in (none expected since module is `github.com/s045pd/umbra`).
+- Real production hostnames, IP addresses, database names other than the new defaults — replaced with `example.com` / `localhost` placeholders.
+- Personal TODO/FIXME comments referencing internal context.
+- `.DS_Store` files at any depth.
+
+Verification:
+
+- Sanitizer report shows PASS or PASS-WITH-WARNINGS (warnings reviewed and accepted).
+- Manual grep for `cursed`, `CursedChrome`, `s045pd.x@gmail`, hard-coded `cursedchrome` strings — only acceptable hits remain in this spec file (`docs/superpowers/specs/...` referenced as historical context).
+
+### 5.4 Phase 4 — Package for OSS
+
+Run `opensource-packager` (or its outputs manually). Generate the open-source canonicals so the repo is immediately usable by external developers.
+
+Generated/updated files:
+
+- `README.md` (top-level) — Umbra-branded, includes: project description, defensive-use disclaimer ("**Authorized monitoring environments only**"), architecture, quick start, dev guide, contributing pointer, license badge.
+- `LICENSE` — keep existing MIT, update copyright line to `Copyright (c) 2026 s045pd`.
+- `CONTRIBUTING.md` — branch model, PR template, test expectations, code style references.
+- `SECURITY.md` — vulnerability reporting policy + clear authorized-use policy + dual-use disclosure.
+- `.env.example` — full env var inventory with placeholder values and inline comments.
+- `setup.sh` (optional) — one-shot dev environment bootstrap.
+- `CLAUDE.md` — pruned to non-private project guidance only (current version has private context).
+- `.github/ISSUE_TEMPLATE/` — bug, feature, security templates.
+- `.github/PULL_REQUEST_TEMPLATE.md`.
+- `.github/workflows/` — review existing `Build&Push.yml` for any private references; clean or replace.
+- `.gitignore` — verified to exclude all the Phase 1 exclusion patterns plus build outputs.
+
+Verification:
+
+- A fresh clone + `setup.sh` + `make build` + `npm install && npm run build` produces a working stack from scratch.
+- All paths in docs are repo-relative or generic — no `/Users/s045pd` strings.
+- `gh repo view --readme` style preview of README renders correctly.
+
+### 5.5 Phase 5 — Publish to GitHub
+
+Final review gate, then create the public repo and push.
+
+Steps:
+
+1. Operator (s045pd) reviews the local fork at `umbra-edr/` end-to-end. **Implementation halts here for explicit go-ahead before any push.**
+2. `cd umbra-edr && git init && git add . && git commit -m "feat: initial Umbra release"`.
+3. `gh repo create s045pd/umbra-edr --public --source=. --description "Umbra · Browser-layer EDR · Light through shadow" --remote=origin`.
+4. `git push -u origin main` (or `master`, matching local convention).
+5. Configure repo settings via `gh`: enable Issues, enable Discussions (optional), set default branch, add topics (`edr`, `chrome-extension`, `browser-monitoring`, `go`, `vue`).
+6. Smoke-test the public repo: clone the public URL into a tmp dir, run setup, verify build.
+
+Verification:
+
+- `https://github.com/s045pd/umbra-edr` loads with rendered README and Umbra icon visible.
+- `git clone <public-url>` from a clean directory produces a buildable copy.
+- No commits in the public history reference `cursed`, `CursedChrome`, or operator-private data.
+
+### 5.6 Sequencing and rollback
+
+- Phases 1–4 are local-only and fully revertable by `rm -rf umbra-edr/`.
+- Phase 5 (publish) is the irreversible gate — once pushed to a public GitHub repo, the data is permanently disclosed even after deletion (caches, forks, archive sites).
+- The operator must explicitly confirm before Phase 5 runs.
+- If any sanitizer finding is unclear, default to "do not publish" until clarified.
+
+### 5.7 Risk register
 
 | Risk | Mitigation |
 |---|---|
-| Already-deployed extensions point at the old WS URL | No-op: server URLs are baked in at packaging time and unaffected by source rename. |
-| Production DB still named `cursedchrome` | Accepted. The DB name lives in the operator's `.env`, not in source. Rename when convenient. |
-| Go module path change breaks consumers | None. Private project, zero external importers. |
-| Docker layer cache misses on first deploy | Accepted. One-time cost. |
-| Stale doc links to deleted images | All fixed in PR ① during README rewrite. |
-| IDE re-indexing during PR ② | One-time annoyance, ~minutes. |
+| Secret or PII leaks into the public push | Phase 3 sanitizer is mandatory and blocks on hits; Phase 5 has a manual review gate before push. |
+| Third-party redistribution violation (bypass-paywalls) | Phase 1 hard-excludes the directory; README documents BYO instructions. |
+| Public repo enables malicious offensive use | README, SECURITY.md, and manifest descriptions explicitly frame as authorized monitoring. The capability set is unchanged — only the framing and brand are. |
+| Old `s045pd/CursedChrome` left in inconsistent state vs new public repo | Accepted. Original stays private and frozen at its current commit; new public repo is a forward-only fork. |
+| GitHub repo name `umbra-edr` already exists under `s045pd` | Pre-checked via `gh repo view` before Phase 5; if conflict, the operator picks an alternate name. |
+| Fresh git history loses traceability to original | Accepted by design (privacy concern from carrying old commits). The first commit message references the brainstorming session as provenance. |
+| Operator's local fork accidentally gets pushed to wrong remote | `git remote -v` checked at Phase 5 start; only `origin → s045pd/umbra-edr` should be present. |
+| Build artifacts (`gui/dist/`, `bin/`) accidentally included | `.gitignore` audited in Phase 4; first `git status` after `git init` reviewed. |
 
 ## 6. Deliverables
 
-| Artifact | Type | Location | PR |
-|---|---|---|---|
-| `images/umbra.svg` | vector master | repo root | ① |
-| `images/umbra-{16,48,128,512}.png` | PNG renders | repo root | ① |
-| `extension/icons/icon{16,48,128}.png` | replaced | main extension | ① |
-| `cookie-sync-extension/icons/icon{16,48,128}.png` | replaced | ShadowLink extension | ① |
-| `gui-next/public/favicon.svg` | favicon | gui-next | ① |
-| Updated `README.md`, `cursed-go/README.md` (→ `umbra-server/README.md`), `cursed-go/DEPLOY.md` | docs | various | ①, ② |
-| Updated `gui-next/tailwind.config.*`, global CSS variables | theme | gui-next | ① |
-| `umbra-server/` directory (was `cursed-go/`) | code rename | repo root | ② |
-| `go.mod` with `github.com/s045pd/umbra` | module identity | umbra-server | ② |
-| Updated `docker-compose.yaml`, `Dockerfile`, `deploy.sh`, `.env.example` | deployment | repo root | ③ |
-| `docs/superpowers/specs/2026-05-07-umbra-rebrand-design.md` | this spec | repo | written before ① |
+All artifacts live under the new fork at `/Users/s045pd/workobj/BackupData/DocumentArchive/GitHub/umbra-edr/`. Phase numbers refer to §5.
+
+| Artifact | Type | Phase |
+|---|---|---|
+| `umbra-edr/` | new sibling project directory | 1 |
+| `umbra-edr/images/umbra.svg` | vector master icon | 2 |
+| `umbra-edr/images/umbra-{16,48,128,512}.png` | PNG renders | 2 |
+| `umbra-edr/extension/icons/icon{16,48,128}.png` | replaced extension icons | 2 |
+| `umbra-edr/cookie-sync-extension/icons/icon{16,48,128}.png` | ShadowLink icons (reuse Umbra mark) | 2 |
+| `umbra-edr/gui-next/public/favicon.svg` | favicon | 2 |
+| `umbra-edr/umbra-server/` | renamed from `cursed-go/` with module path `github.com/s045pd/umbra` | 2 |
+| Updated `umbra-edr/gui-next/tailwind.config.*`, global CSS | design tokens applied | 2 |
+| Updated `umbra-edr/docker-compose.yaml`, `Dockerfile`, `deploy.sh`, `.env.example` | deployment | 2 |
+| Sanitizer report | text/markdown, retained locally only (not committed) | 3 |
+| `umbra-edr/README.md` (top-level, OSS-ready) | docs | 4 |
+| `umbra-edr/LICENSE` | MIT, copyright 2026 s045pd | 4 |
+| `umbra-edr/CONTRIBUTING.md` | OSS contributor guide | 4 |
+| `umbra-edr/SECURITY.md` | reporting policy + authorized-use disclaimer | 4 |
+| `umbra-edr/.env.example` | env inventory with placeholders | 4 |
+| `umbra-edr/setup.sh` | dev bootstrap script | 4 |
+| `umbra-edr/.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md` | GitHub templates | 4 |
+| Pruned `umbra-edr/CLAUDE.md` | dev guidance only, no private context | 4 |
+| `https://github.com/s045pd/umbra-edr` | published public GitHub repo | 5 |
+| `docs/superpowers/specs/2026-05-07-umbra-rebrand-design.md` | this spec, lives in original repo as historical record | written before phase 1 |
 
 ## 7. What this spec does not decide
 
 - The exact PNG rendering parameters (DPI, padding, transparent vs solid background) — a tooling detail to settle in the implementation plan.
 - Whether to use `rsvg-convert`, ImageMagick, or a Node script for SVG → PNG generation — pick whichever is already available locally.
+- The exact wording of `SECURITY.md`'s authorized-use disclaimer — drafted in the plan, finalized at review.
 - Whether ShadowLink eventually gets its own distinct icon — deferred.
 - Whether Umbra Sensor diverges visually from the Umbra control plane — deferred.
+- Whether to publish the embed-targets directory as part of the OSS release — defer to plan; if included, each sub-extension needs its own description audited for tone.
+- Default branch name on the public repo (`main` vs `master`) — pick at Phase 5 to match local convention.
 
 These are implementation choices that belong in the plan, not the design.
