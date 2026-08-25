@@ -30,3 +30,4 @@ cursed-go/deploy/extensions/
 *.test
 *.out
 coverage.txt
+.claude/settings.local.json
